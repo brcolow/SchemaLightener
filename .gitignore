@@ -1,8 +1,30 @@
+# Maven
 target/
 dependency-reduced-pom.xml
-.idea/
-*.iml
-out/
+
+# Java
 *.class
+*.ear
 *.jar
+*.nar
+*.war
+hs_err_pid*
+replay_pid*
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# Legacy local directories
+bin/
+lib/
+
+# Logs
 *.log
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
