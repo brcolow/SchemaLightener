@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.github.brcolow</groupId>
+    <artifactId>schema-lightener</artifactId>
+    <version>5.0.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>Xml SchemaLightener</name>
+    <description>Java API and XSLT stylesheets for flattening and lightening XML Schemas and WSDL files.</description>
+    <url>https://github.com/brcolow/SchemaLightener</url>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/license/mit</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <connection>scm:git:https://github.com/brcolow/SchemaLightener.git</connection>
+        <developerConnection>scm:git:https://github.com/brcolow/SchemaLightener.git</developerConnection>
+        <url>https://github.com/brcolow/SchemaLightener</url>
+    </scm>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>8</maven.compiler.release>
+        <saxon.version>12.9</saxon.version>
+        <junit.version>6.1.0</junit.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>net.sf.saxon</groupId>
+            <artifactId>Saxon-HE</artifactId>
+            <version>${saxon.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.15.0</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.6</version>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.6.3</version>
+                <configuration>
+                    <mainClass>com.xmlhelpline.schemalightener.gui.SchemaLightenerGui</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

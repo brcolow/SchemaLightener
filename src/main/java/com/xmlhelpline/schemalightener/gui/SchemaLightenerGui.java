@@ -1,3 +1,5 @@
+package com.xmlhelpline.schemalightener.gui;
+
 import javax.swing.*;
 import javax.xml.transform.*;
 import java.awt.*;
@@ -17,7 +19,7 @@ import java.io.StringWriter;
  * @version 4.9
  * @since   2016-05-27
  */
-public class SchemaLightener extends JPanel implements ActionListener {
+public class SchemaLightenerGui extends JPanel implements ActionListener {
 
     private String defaultPath = new File(".").getAbsolutePath();
 
@@ -54,7 +56,7 @@ public class SchemaLightener extends JPanel implements ActionListener {
     static private final String stringXslFlattenWSDLSourceFile = "WSDLFlattener.xslt";
 
 
-    public SchemaLightener() {
+    public SchemaLightenerGui() {
         setLookAndFeel(); // see this method for more
         //ImageIcon icon = new ImageIcon("java-swing-tutorial.JPG");
 
@@ -750,7 +752,7 @@ public class SchemaLightener extends JPanel implements ActionListener {
         spacerN.add(new JLabel("     "), BorderLayout.NORTH);
         frame.getContentPane().add(spacerN, BorderLayout.NORTH);
 
-        frame.getContentPane().add(new SchemaLightener(), BorderLayout.CENTER);
+        frame.getContentPane().add(new SchemaLightenerGui(), BorderLayout.CENTER);
         frame.setSize(800, 600);
         frame.setVisible(true);
 
@@ -774,7 +776,7 @@ public class SchemaLightener extends JPanel implements ActionListener {
             //
             //
             int returnVal = jfcSelectFlattenSchema.showOpenDialog(
-                    SchemaLightener.this);
+                    SchemaLightenerGui.this);
 
             if (returnVal == JFileChooser.APPROVE_OPTION) {
                 File file = jfcSelectFlattenSchema.getSelectedFile();
@@ -803,7 +805,7 @@ public class SchemaLightener extends JPanel implements ActionListener {
             //
             //
             int returnVal = jfcFlattenDestination.showOpenDialog(
-                    SchemaLightener.this);
+                    SchemaLightenerGui.this);
 
             if (returnVal == JFileChooser.APPROVE_OPTION) {
 
@@ -873,7 +875,7 @@ public class SchemaLightener extends JPanel implements ActionListener {
             //
             //
             int returnVal = jfcSelectLightenSchema.showOpenDialog(
-                    SchemaLightener.this);
+                    SchemaLightenerGui.this);
 
             if (returnVal == JFileChooser.APPROVE_OPTION) {
                 File file = jfcSelectLightenSchema.getSelectedFile();
@@ -901,7 +903,7 @@ public class SchemaLightener extends JPanel implements ActionListener {
             //
             //
             int returnVal = jfcSelectLightenInstance.showOpenDialog(
-                    SchemaLightener.this);
+                    SchemaLightenerGui.this);
 
             if (returnVal == JFileChooser.APPROVE_OPTION) {
                 File file = jfcSelectLightenInstance.getSelectedFile();
@@ -930,7 +932,7 @@ public class SchemaLightener extends JPanel implements ActionListener {
             //
             //
             int returnVal = jfcLightenDestination.showOpenDialog(
-                    SchemaLightener.this);
+                    SchemaLightenerGui.this);
 
             if (returnVal == JFileChooser.APPROVE_OPTION) {
 
@@ -1007,7 +1009,7 @@ public class SchemaLightener extends JPanel implements ActionListener {
             //
             //
             int returnVal = jfcSelectFlattenWSDL.showOpenDialog(
-                    SchemaLightener.this);
+                    SchemaLightenerGui.this);
 
             if (returnVal == JFileChooser.APPROVE_OPTION) {
                 File file = jfcSelectFlattenWSDL.getSelectedFile();
@@ -1037,7 +1039,7 @@ public class SchemaLightener extends JPanel implements ActionListener {
             //
             //
             int returnVal = jfcFlattenWSDLDestination.showOpenDialog(
-                    SchemaLightener.this);
+                    SchemaLightenerGui.this);
 
             if (returnVal == JFileChooser.APPROVE_OPTION) {
 

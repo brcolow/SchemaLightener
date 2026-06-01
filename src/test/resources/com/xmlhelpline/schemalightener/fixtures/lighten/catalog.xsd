@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+            xmlns="urn:example:lighten"
+            targetNamespace="urn:example:lighten"
+            elementFormDefault="qualified">
+    <xsd:element name="order" type="OrderType"/>
+    <xsd:element name="invoice" type="InvoiceType"/>
+
+    <xsd:complexType name="OrderType">
+        <xsd:sequence>
+            <xsd:element name="id" type="xsd:string"/>
+            <xsd:element name="note" type="xsd:string" minOccurs="0"/>
+        </xsd:sequence>
+        <xsd:attribute name="status" type="xsd:string" use="optional"/>
+    </xsd:complexType>
+
+    <xsd:complexType name="InvoiceType">
+        <xsd:sequence>
+            <xsd:element name="number" type="xsd:string"/>
+        </xsd:sequence>
+    </xsd:complexType>
+</xsd:schema>

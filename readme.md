@@ -16,6 +16,54 @@ See XSLT extension files in distribution.
 
 If simplicity is what you're interested in, you can simply use "start.bat" to invoke the GUI that is used on top of the XSLTs.
 
+### Maven and Java API
+
+This fork also builds as a standard Maven project and exposes the transformations as a Java library API. Build and test with:
+
+```shell
+./mvnw test
+```
+
+On Windows:
+
+```shell
+mvnw.cmd test
+```
+
+The Maven coordinates are:
+
+```xml
+<dependency>
+    <groupId>io.github.brcolow</groupId>
+    <artifactId>schema-lightener</artifactId>
+    <version>5.0.0-SNAPSHOT</version>
+</dependency>
+```
+
+Example usage:
+
+```java
+import com.xmlhelpline.schemalightener.SchemaLightener;
+import com.xmlhelpline.schemalightener.TransformationResult;
+
+import java.nio.file.Paths;
+
+SchemaLightener schemaLightener = new SchemaLightener();
+
+TransformationResult flattened = schemaLightener.flattenSchema(
+        Paths.get("schemas/root.xsd"),
+        Paths.get("build/flattened"));
+
+TransformationResult lightened = schemaLightener.lightenSchema(
+        Paths.get("schemas/root.xsd"),
+        Paths.get("samples/example.xml"),
+        Paths.get("build/lightened"));
+
+TransformationResult flattenedWsdl = schemaLightener.flattenWsdl(
+        Paths.get("service.wsdl"),
+        Paths.get("build/wsdl"));
+```
+
 ### Definitions
 
 #### Lighten:
@@ -26,11 +74,11 @@ If simplicity is what you're interested in, you can simply use "start.bat" to in
 
 ### Requirements
 
-```Using the stylesheets: an XSLT 2.0 processor.  Saxon is included in the distribution.```
+```Using the stylesheets: an XSLT 2.0 processor.  The Maven build uses Saxon HE 12.9.```
 
 ```Operating system: The SchemaLightener XSLTs and UI have been tested on Windows Vista, XP, and Linux.```
 
-```For the Graphical User Interface (GUI): java runtime jre 1.6 or greater```
+```For the Java API and Graphical User Interface (GUI): Java runtime 8 or greater.```
 
 
 ### How does it work?
@@ -76,7 +124,7 @@ http://www.xmlhelpline.com/tools/SchemaLightener.php#tested
 The core of the SchemaLightener which is 3 main XSLT stylesheets. This can be used with any XSLT 2.0 processor.  The 3 functions correlate to tthe 3 main XSLTs.
 SchemaLightener.xslt, SchemaFlattener.xslt, and WSDLFlattener.xslt.
 
-For your convenience, it comes bundled with Saxon, an XSLT processor created by Michael Kay. An open source version of Saxon is included in this product. http://saxon.sourceforge.net. See Saxon notices in this package for legal notes on its usage.
+For your convenience, the Maven build declares Saxon HE, an XSLT processor created by Michael Kay, as a dependency. The current Maven dependency is Saxon HE 12.9.
 
 A user interface (UI). The UI can invoke both the Flattener and Lightener XSLT stylesheets. It also provides full logging with stack trace. It is cross-platform java and has been tested on Windows and Ubuntu Llinux. 
 
@@ -84,7 +132,7 @@ The complete source code for the user interface (UI). Written in java, a simple 
 
 Sample data. Selected Xml Schemas and Xml instances from numerous standards consortia are included.
 
-Batch files that invoke the Lightener and Flattener across many files. (While the UI allows you to apply the stylesheets one at a time, the batch files combined with the XSLT processor allow you to create as many results as needed.) The batch files included use Saxon to process the sample data.
+A standard Maven build, Maven wrapper, Java API, and JUnit tests. The Maven dependency on Saxon HE is used for running the stylesheets from Java.
 
 Now you also get the WSDLFlattener too. It does for WSDL what the SchemaFlattener does for Schemas.
 
@@ -95,4 +143,3 @@ Now you also get the WSDLFlattener too. It does for WSDL what the SchemaFlattene
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
-
