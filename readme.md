@@ -78,7 +78,7 @@ TransformationResult flattenedWsdl = schemaLightener.flattenWsdl(
 
 ```Operating system: The SchemaLightener XSLTs and UI have been tested on Windows Vista, XP, and Linux.```
 
-```For the Java API and Graphical User Interface (GUI): Java runtime 8 or greater.```
+```For the Java API and Graphical User Interface (GUI): Java runtime 9 or greater.```
 
 
 ### How does it work?
