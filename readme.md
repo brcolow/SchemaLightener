@@ -10,11 +10,7 @@ Finally there is the WSDL Flattener, which does for WSDL what the flattener does
 
 ## Getting Started
 
-The heart of the tool is a set of XSLTs that do the transformations in all 3 functions.  Each XSLT can be applied in several ways.  First, they can be applied via command like (i.e. batch or shell).  Parameters are noted in the XSLTs that indicate how to populate them.
-Secondly, the tool comes with a GUI.  The GUI is a java app that allows for very simply point and click invocation of the functions.
-See XSLT extension files in distribution.
-
-If simplicity is what you're interested in, you can simply use "start.bat" to invoke the GUI that is used on top of the XSLTs.
+The heart of the tool is a set of XSLTs that do the transformations in all 3 functions. This fork packages those stylesheets behind a Java library API so applications can call the schema lightener, schema flattener, and WSDL flattener directly.
 
 ### Maven and Java API
 
@@ -39,6 +35,14 @@ The Maven coordinates are:
     <version>5.0.0-SNAPSHOT</version>
 </dependency>
 ```
+
+The artifact includes a JPMS module descriptor. The module name is:
+
+```java
+requires com.xmlhelpline.schemalightener;
+```
+
+The module exports only the Java library API. Saxon HE remains a runtime dependency used to execute the bundled XSLT 2.0 stylesheets, but it is not exposed through the public API or required by the module descriptor.
 
 Example usage:
 
@@ -102,11 +106,11 @@ InMemoryTransformationResult flattened = schemaLightener.flattenSchema(
 
 ### Requirements
 
-```Using the stylesheets: an XSLT 2.0 processor.  The Maven build uses Saxon HE 12.9.```
+```Using the stylesheets: an XSLT 2.0 processor.  The Maven build brings Saxon HE 12.9 at runtime.```
 
-```Operating system: The SchemaLightener XSLTs and UI have been tested on Windows Vista, XP, and Linux.```
+```Operating system: The SchemaLightener XSLTs have been tested on Windows Vista, XP, and Linux.```
 
-```For the Java API and Graphical User Interface (GUI): Java runtime 9 or greater.```
+```For the Java API: Java runtime 9 or greater.```
 
 
 ### How does it work?
@@ -127,10 +131,6 @@ You are implementing an Xml Schema acquired from somewhere else (i.e. from a tra
 In any of these scenarios, you require a simplified Xml Schema to be consistent with the original. Specifically, you want an Xml instance that is valid against the subset to also validate against the original. But how can this be done? Previously, there were only 2 principle solutions for this; First, edit the original schema. This works but is tedious and risks hand editing errors. Second, you could implement Schematron technology. This also works, but may not always be possible (see How does this relate to Schematron?).
 
 The Xml SchemaLightener helps you create a subset / LiteBOD / pruned Schema from any original Schema. The image below illustrates how this tool fits into an Xml management context.
-
-
-### Does it have a GUI?
-A Graphical User Interface (GUI) is included for all three tools. The GUI allows you to simply point and click. Select a Schema, select an Xml instance, select a destination folder, and then push a button. It's that simple!
 
 
 ## How much of a benefit do I get?
@@ -154,13 +154,9 @@ SchemaLightener.xslt, SchemaFlattener.xslt, and WSDLFlattener.xslt.
 
 For your convenience, the Maven build declares Saxon HE, an XSLT processor created by Michael Kay, as a dependency. The current Maven dependency is Saxon HE 12.9.
 
-A user interface (UI). The UI can invoke both the Flattener and Lightener XSLT stylesheets. It also provides full logging with stack trace. It is cross-platform java and has been tested on Windows and Ubuntu Llinux. 
-
-The complete source code for the user interface (UI). Written in java, a simple swing application.
-
 Sample data. Selected Xml Schemas and Xml instances from numerous standards consortia are included.
 
-A standard Maven build, Maven wrapper, Java API, and JUnit tests. The Maven dependency on Saxon HE is used for running the stylesheets from Java.
+A standard Maven build, Maven wrapper, JPMS module descriptor, Java API, and JUnit tests. The Maven dependency on Saxon HE is used for running the stylesheets from Java.
 
 Now you also get the WSDLFlattener too. It does for WSDL what the SchemaFlattener does for Schemas.
 

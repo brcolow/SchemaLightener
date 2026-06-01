@@ -1,20 +1,11 @@
 package com.xmlhelpline.schemalightener;
 
-import net.sf.saxon.lib.ResourceResolverWrappingURIResolver;
-import net.sf.saxon.s9api.Processor;
-import net.sf.saxon.s9api.QName;
-import net.sf.saxon.s9api.SaxonApiException;
-import net.sf.saxon.s9api.Serializer;
-import net.sf.saxon.s9api.XdmAtomicValue;
-import net.sf.saxon.s9api.XsltCompiler;
-import net.sf.saxon.s9api.XsltExecutable;
-import net.sf.saxon.s9api.XsltTransformer;
-
 import javax.xml.transform.Result;
 import javax.xml.transform.Source;
 import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.TransformerFactoryConfigurationError;
 import javax.xml.transform.URIResolver;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
@@ -22,6 +13,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.io.StringWriter;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Proxy;
 import java.net.URI;
 import java.net.URL;
 import java.nio.file.Files;
@@ -40,6 +33,8 @@ import java.util.stream.Stream;
  */
 public final class SchemaLightener {
     private static final String SAXON_TRANSFORMER_FACTORY = "net.sf.saxon.TransformerFactoryImpl";
+    private static final String SAXON_OUTPUT_URI_RESOLVER = "net.sf.saxon.lib.OutputURIResolver";
+    private static final String SAXON_OUTPUT_URI_RESOLVER_FEATURE = "http://saxon.sf.net/feature/outputURIResolver";
     private static final String XSLT_RESOURCE_BASE = "/com/xmlhelpline/schemalightener/xslt/";
 
     /**
@@ -304,6 +299,10 @@ public final class SchemaLightener {
     }
 
     private Transformer newTransformer(String stylesheetName) throws IOException, TransformerException {
+        return newTransformer(newSaxonTransformerFactory(), stylesheetName);
+    }
+
+    private Transformer newTransformer(TransformerFactory factory, String stylesheetName) throws IOException, TransformerException {
         URL stylesheet = SchemaLightener.class.getResource(XSLT_RESOURCE_BASE + stylesheetName);
         if (stylesheet == null) {
             throw new SchemaLightenerException("Cannot find stylesheet resource: " + stylesheetName);
@@ -312,8 +311,6 @@ public final class SchemaLightener {
         try (InputStream stylesheetStream = stylesheet.openStream()) {
             Source stylesheetSource = new StreamSource(stylesheetStream);
             stylesheetSource.setSystemId(stylesheet.toExternalForm());
-            ClassLoader classLoader = SchemaLightener.class.getClassLoader();
-            TransformerFactory factory = TransformerFactory.newInstance(SAXON_TRANSFORMER_FACTORY, classLoader);
             return factory.newTransformer(stylesheetSource);
         }
     }
@@ -326,10 +323,6 @@ public final class SchemaLightener {
             XmlInput... supportingDocuments) {
         Objects.requireNonNull(source, "source must not be null");
         try {
-            Processor processor = new Processor(false);
-            XsltExecutable executable = compileStylesheet(processor, stylesheetName);
-            XsltTransformer transformer = executable.load();
-
             Map<String, XmlInput> resolvableInputs = new LinkedHashMap<String, XmlInput>();
             registerResolvableInput(resolvableInputs, source);
             if (supportingDocuments != null) {
@@ -338,33 +331,25 @@ public final class SchemaLightener {
                 }
             }
             URIResolver uriResolver = memoryAwareResolver(resolvableInputs);
-            transformer.setResourceResolver(new ResourceResolverWrappingURIResolver(uriResolver));
-
             String resultBasePath = "memory:/schemalightener/results/" + UUID.randomUUID() + "/";
-            transformer.setBaseOutputURI(resultBasePath);
-            transformer.setParameter(new QName("resultBasePath"), new XdmAtomicValue(resultBasePath));
-            transformer.setParameter(new QName("sourcePathAndFileName"), new XdmAtomicValue(source.getSystemId().toASCIIString()));
+            Map<URI, StringWriter> resultWriters = new LinkedHashMap<URI, StringWriter>();
+
+            TransformerFactory factory = newSaxonTransformerFactory();
+            factory.setURIResolver(uriResolver);
+            setOutputUriResolver(factory, resultWriters);
+
+            Transformer transformer = newTransformer(factory, stylesheetName);
+            transformer.setURIResolver(uriResolver);
+            transformer.setParameter("resultBasePath", resultBasePath);
+            transformer.setParameter("sourcePathAndFileName", source.getSystemId().toASCIIString());
             for (Map.Entry<String, Object> entry : parameters.entrySet()) {
-                transformer.setParameter(new QName(entry.getKey()), new XdmAtomicValue(String.valueOf(entry.getValue())));
+                transformer.setParameter(entry.getKey(), String.valueOf(entry.getValue()));
             }
 
             StringWriter primaryResult = new StringWriter();
-            Serializer primarySerializer = processor.newSerializer(primaryResult);
-            primarySerializer.setCloseOnCompletion(false);
-            transformer.setDestination(primarySerializer);
-
-            Map<URI, StringWriter> resultWriters = new LinkedHashMap<URI, StringWriter>();
-            transformer.setResultDocumentHandler(uri -> {
-                URI normalizedUri = uri.normalize();
-                StringWriter writer = new StringWriter();
-                resultWriters.put(normalizedUri, writer);
-                Serializer serializer = processor.newSerializer(writer);
-                serializer.setCloseOnCompletion(false);
-                return serializer;
-            });
-
-            transformer.setSource(source.toSource());
-            transformer.transform();
+            StreamResult result = new StreamResult(primaryResult);
+            result.setSystemId(resultBasePath);
+            transformer.transform(source.toSource(), result);
 
             Map<URI, String> resultDocuments = new LinkedHashMap<URI, String>();
             for (Map.Entry<URI, StringWriter> entry : resultWriters.entrySet()) {
@@ -375,26 +360,74 @@ public final class SchemaLightener {
                     source.getSystemId(),
                     primaryResult.toString(),
                     resultDocuments);
-        } catch (SaxonApiException e) {
+        } catch (IOException e) {
+            throw new SchemaLightenerException("Unable to read stylesheet resource: " + stylesheetName, e);
+        } catch (TransformerException e) {
             throw new SchemaLightenerException("Unable to transform " + source.getSystemId() + " with " + stylesheetName, e);
         }
     }
 
-    private XsltExecutable compileStylesheet(Processor processor, String stylesheetName) {
-        URL stylesheet = SchemaLightener.class.getResource(XSLT_RESOURCE_BASE + stylesheetName);
-        if (stylesheet == null) {
-            throw new SchemaLightenerException("Cannot find stylesheet resource: " + stylesheetName);
+    private static TransformerFactory newSaxonTransformerFactory() {
+        ClassLoader classLoader = SchemaLightener.class.getClassLoader();
+        try {
+            return TransformerFactory.newInstance(SAXON_TRANSFORMER_FACTORY, classLoader);
+        } catch (TransformerFactoryConfigurationError e) {
+            throw new SchemaLightenerException("Saxon HE is required at runtime to run SchemaLightener transformations", e);
         }
-        try (InputStream stylesheetStream = stylesheet.openStream()) {
-            Source stylesheetSource = new StreamSource(stylesheetStream);
-            stylesheetSource.setSystemId(stylesheet.toExternalForm());
-            XsltCompiler compiler = processor.newXsltCompiler();
-            return compiler.compile(stylesheetSource);
-        } catch (IOException e) {
-            throw new SchemaLightenerException("Unable to read stylesheet resource: " + stylesheetName, e);
-        } catch (SaxonApiException e) {
-            throw new SchemaLightenerException("Unable to compile stylesheet resource: " + stylesheetName, e);
+    }
+
+    private static void setOutputUriResolver(
+            TransformerFactory factory,
+            Map<URI, StringWriter> resultWriters) throws TransformerException {
+        try {
+            ClassLoader classLoader = factory.getClass().getClassLoader();
+            if (classLoader == null) {
+                classLoader = SchemaLightener.class.getClassLoader();
+            }
+            Class<?> resolverType = Class.forName(SAXON_OUTPUT_URI_RESOLVER, true, classLoader);
+            Object resolver = Proxy.newProxyInstance(
+                    classLoader,
+                    new Class<?>[] { resolverType },
+                    outputUriResolverHandler(resultWriters));
+            factory.setAttribute(SAXON_OUTPUT_URI_RESOLVER_FEATURE, resolver);
+        } catch (ClassNotFoundException e) {
+            throw new SchemaLightenerException("Saxon HE output URI resolver is not available at runtime", e);
+        } catch (IllegalArgumentException e) {
+            throw new TransformerException("Unable to configure Saxon output URI resolver", e);
         }
+    }
+
+    private static InvocationHandler outputUriResolverHandler(Map<URI, StringWriter> resultWriters) {
+        return (proxy, method, args) -> {
+            String methodName = method.getName();
+            if ("newInstance".equals(methodName)) {
+                return proxy;
+            }
+            if ("resolve".equals(methodName)) {
+                String href = (String) args[0];
+                String base = (String) args[1];
+                URI resultUri = resolveUri(href, base);
+                StringWriter writer = new StringWriter();
+                resultWriters.put(resultUri, writer);
+
+                StreamResult result = new StreamResult(writer);
+                result.setSystemId(resultUri.toASCIIString());
+                return result;
+            }
+            if ("close".equals(methodName)) {
+                return null;
+            }
+            if ("toString".equals(methodName)) {
+                return "SchemaLightenerOutputURIResolver";
+            }
+            if ("hashCode".equals(methodName)) {
+                return System.identityHashCode(proxy);
+            }
+            if ("equals".equals(methodName)) {
+                return proxy == args[0];
+            }
+            throw new UnsupportedOperationException("Unsupported OutputURIResolver method: " + methodName);
+        };
     }
 
     private static URIResolver memoryAwareResolver(Map<String, XmlInput> resolvableInputs) {
