@@ -58,6 +58,27 @@ class SchemaLightenerTest {
     }
 
     @Test
+    void flattenSchemaCanResolveImportsFromInMemoryDocuments() throws Exception {
+        URI rootUri = URI.create("memory:/schemas/root.xsd");
+        URI commonUri = URI.create("memory:/schemas/common.xsd");
+
+        InMemoryTransformationResult result = schemaLightener.flattenSchema(
+                read(fixture("flatten-import/root.xsd")),
+                rootUri,
+                XmlInput.fromString(read(fixture("flatten-import/common.xsd")), commonUri));
+
+        assertEquals(TransformationOperation.FLATTEN_SCHEMA, result.getOperation());
+        String rootXml = result.findResultDocument("root.xsd")
+                .orElseThrow(() -> new AssertionError("Missing root.xsd result: " + result.getResultDocuments().keySet()));
+        String commonXml = result.findResultDocument("common.xsd")
+                .orElseThrow(() -> new AssertionError("Missing common.xsd result: " + result.getResultDocuments().keySet()));
+        assertTrue(rootXml.contains("namespace=\"urn:test:common\""));
+        assertTrue(rootXml.contains("schemaLocation=\"../urn_test_common/common.xsd\""));
+        assertTrue(commonXml.contains("CommonType"));
+        assertTrue(commonXml.contains("urn:test:common"));
+    }
+
+    @Test
     void lightenSchemaRemovesUnusedGlobalComponents() throws Exception {
         Path sourceSchema = fixture("lighten/catalog.xsd");
         Path instance = fixture("lighten/order.xml");
@@ -101,6 +122,20 @@ class SchemaLightenerTest {
                 .newSchema(new StreamSource(new StringReader(lightenedXml)))
                 .newValidator()
                 .validate(new StreamSource(new StringReader(instanceXml)));
+    }
+
+    @Test
+    void flattenWsdlMergesSchemaDependencies() throws Exception {
+        Path sourceWsdl = fixture("wsdl/service.wsdl");
+
+        TransformationResult result = schemaLightener.flattenWsdl(sourceWsdl, outputDirectory);
+
+        assertEquals(TransformationOperation.FLATTEN_WSDL, result.getOperation());
+        Path flattenedWsdl = findOutputFile(result, "service.wsdl");
+        String flattenedXml = read(flattenedWsdl);
+        assertTrue(flattenedXml.contains("SubmitOrderRequest"));
+        assertTrue(flattenedXml.contains("OrderType"));
+        assertFalse(flattenedXml.contains("schemaLocation=\"types.xsd\""));
     }
 
     private static Path fixture(String name) throws Exception {

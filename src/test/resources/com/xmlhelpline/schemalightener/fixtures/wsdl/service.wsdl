@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                  xmlns:typ="urn:test:types"
+                  targetNamespace="urn:test:service">
+    <wsdl:types>
+        <xsd:schema targetNamespace="urn:test:service">
+            <xsd:import namespace="urn:test:types" schemaLocation="types.xsd"/>
+        </xsd:schema>
+    </wsdl:types>
+
+    <wsdl:message name="SubmitOrderRequest">
+        <wsdl:part name="parameters" element="typ:order"/>
+    </wsdl:message>
+</wsdl:definitions>

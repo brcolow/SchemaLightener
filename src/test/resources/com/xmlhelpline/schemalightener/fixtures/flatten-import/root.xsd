@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+            xmlns:root="urn:test:root"
+            xmlns:common="urn:test:common"
+            targetNamespace="urn:test:root"
+            elementFormDefault="qualified">
+    <xsd:import namespace="urn:test:common" schemaLocation="common.xsd"/>
+
+    <xsd:element name="order" type="common:CommonType"/>
+</xsd:schema>
