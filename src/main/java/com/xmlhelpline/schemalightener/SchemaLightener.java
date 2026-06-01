@@ -38,6 +38,12 @@ public final class SchemaLightener {
     private static final String XSLT_RESOURCE_BASE = "/com/xmlhelpline/schemalightener/xslt/";
 
     /**
+     * Create a SchemaLightener API instance.
+     */
+    public SchemaLightener() {
+    }
+
+    /**
      * Flatten an XML Schema into the fewest possible schema files.
      *
      * @param schema source XML Schema

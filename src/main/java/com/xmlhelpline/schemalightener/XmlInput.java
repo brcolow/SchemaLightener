@@ -24,11 +24,25 @@ public final class XmlInput {
         this.systemId = systemId.normalize();
     }
 
+    /**
+     * Create reusable XML input from a string.
+     *
+     * @param xml XML document content
+     * @param systemId absolute system ID used for relative URI resolution
+     * @return XML input
+     */
     public static XmlInput fromString(String xml, URI systemId) {
         Objects.requireNonNull(xml, "xml must not be null");
         return new XmlInput(xml, null, requireAbsoluteSystemId(systemId));
     }
 
+    /**
+     * Create reusable XML input from a reader.
+     *
+     * @param reader XML document reader
+     * @param systemId absolute system ID used for relative URI resolution
+     * @return XML input
+     */
     public static XmlInput fromReader(Reader reader, URI systemId) {
         Objects.requireNonNull(reader, "reader must not be null");
         try {
@@ -38,6 +52,12 @@ public final class XmlInput {
         }
     }
 
+    /**
+     * Create reusable XML input from a file path.
+     *
+     * @param path path to a readable XML file
+     * @return XML input
+     */
     public static XmlInput fromPath(Path path) {
         Objects.requireNonNull(path, "path must not be null");
         Path normalizedPath = path.toAbsolutePath().normalize();
@@ -47,6 +67,11 @@ public final class XmlInput {
         return new XmlInput(null, normalizedPath, normalizedPath.toUri());
     }
 
+    /**
+     * Get the system ID used for relative URI resolution.
+     *
+     * @return absolute system ID used for relative URI resolution
+     */
     public URI getSystemId() {
         return systemId;
     }

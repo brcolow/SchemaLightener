@@ -26,10 +26,20 @@ public final class InMemoryTransformationResult {
         this.resultDocuments = Collections.unmodifiableMap(new LinkedHashMap<URI, String>(resultDocuments));
     }
 
+    /**
+     * Get the transformation operation that produced this result.
+     *
+     * @return transformation operation that produced this result
+     */
     public TransformationOperation getOperation() {
         return operation;
     }
 
+    /**
+     * Get the system ID of the source document supplied to the transformation.
+     *
+     * @return system ID of the source document supplied to the transformation
+     */
     public URI getSourceSystemId() {
         return sourceSystemId;
     }
@@ -37,6 +47,8 @@ public final class InMemoryTransformationResult {
     /**
      * The primary XSLT result. The bundled stylesheets mostly write files using xsl:result-document,
      * so this value is often empty.
+     *
+     * @return primary transformation result
      */
     public String getPrimaryResult() {
         return primaryResult;
@@ -44,11 +56,19 @@ public final class InMemoryTransformationResult {
 
     /**
      * Result documents keyed by the URI supplied to xsl:result-document.
+     *
+     * @return generated result documents
      */
     public Map<URI, String> getResultDocuments() {
         return resultDocuments;
     }
 
+    /**
+     * Find a generated result document by its trailing file name.
+     *
+     * @param fileName result document file name
+     * @return generated XML when a matching result document exists
+     */
     public Optional<String> findResultDocument(String fileName) {
         for (Map.Entry<URI, String> entry : resultDocuments.entrySet()) {
             String path = entry.getKey().getPath();

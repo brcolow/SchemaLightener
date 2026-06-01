@@ -112,6 +112,30 @@ InMemoryTransformationResult flattened = schemaLightener.flattenSchema(
 - Maven 3.9.x when using the wrapper.
 - Saxon HE 12.9 at runtime. The Maven build declares this dependency.
 
+## Publishing
+
+Release publishing is configured behind the `release` Maven profile. The profile attaches source and javadoc jars, signs artifacts with GPG, and uses Sonatype's Central Portal publishing plugin with the server ID `central`.
+
+Use a dry release-profile verification without signing:
+
+```shell
+./mvnw -Prelease -Dgpg.skip=true verify
+```
+
+On Windows PowerShell:
+
+```shell
+mvnw.cmd -Prelease "-Dgpg.skip=true" verify
+```
+
+When credentials and signing are configured, deploy with:
+
+```shell
+./mvnw -Prelease deploy
+```
+
+Set `-Dcentral.publish.autoPublish=true` when you want the Central Portal deployment to be automatically published after upload.
+
 ## How Lightening Works
 
 The lightener applies an XSLT stylesheet to an XML Schema and an XML instance that is valid against that schema. The instance represents the subset you want to preserve. The transformation removes unused global elements, attributes, types, attribute groups, and groups, then writes a smaller schema that still conforms to the original schema's data model for the selected subset.
