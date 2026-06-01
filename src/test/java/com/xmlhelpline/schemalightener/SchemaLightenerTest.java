@@ -6,6 +6,8 @@ import org.junit.jupiter.api.io.TempDir;
 import javax.xml.XMLConstants;
 import javax.xml.transform.stream.StreamSource;
 import javax.xml.validation.SchemaFactory;
+import java.io.StringReader;
+import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -38,6 +40,24 @@ class SchemaLightenerTest {
     }
 
     @Test
+    void flattenSchemaCanUseStringInputsAndReturnResultDocumentsInMemory() throws Exception {
+        URI rootUri = URI.create("memory:/schemas/root.xsd");
+        URI commonUri = URI.create("memory:/schemas/common.xsd");
+
+        InMemoryTransformationResult result = schemaLightener.flattenSchema(
+                read(fixture("flatten/root.xsd")),
+                rootUri,
+                XmlInput.fromString(read(fixture("flatten/common.xsd")), commonUri));
+
+        assertEquals(TransformationOperation.FLATTEN_SCHEMA, result.getOperation());
+        String flattenedXml = result.findResultDocument("root.xsd")
+                .orElseThrow(() -> new AssertionError("Missing root.xsd result: " + result.getResultDocuments().keySet()));
+        assertTrue(flattenedXml.contains("OrderType"));
+        assertTrue(flattenedXml.contains("LineType"));
+        assertFalse(flattenedXml.contains("schemaLocation=\"common.xsd\""));
+    }
+
+    @Test
     void lightenSchemaRemovesUnusedGlobalComponents() throws Exception {
         Path sourceSchema = fixture("lighten/catalog.xsd");
         Path instance = fixture("lighten/order.xml");
@@ -56,6 +76,31 @@ class SchemaLightenerTest {
                 .newSchema(lightenedSchema.toFile())
                 .newValidator()
                 .validate(new StreamSource(instance.toFile()));
+    }
+
+    @Test
+    void lightenSchemaCanUseReadersAndReturnResultDocumentsInMemory() throws Exception {
+        String schemaXml = read(fixture("lighten/catalog.xsd"));
+        String instanceXml = read(fixture("lighten/order.xml"));
+
+        InMemoryTransformationResult result = schemaLightener.lightenSchema(
+                new StringReader(schemaXml),
+                URI.create("memory:/schemas/catalog.xsd"),
+                new StringReader(instanceXml),
+                URI.create("memory:/instances/order.xml"));
+
+        assertEquals(TransformationOperation.LIGHTEN_SCHEMA, result.getOperation());
+        String lightenedXml = result.findResultDocument("catalog.xsd")
+                .orElseThrow(() -> new AssertionError("Missing catalog.xsd result: " + result.getResultDocuments().keySet()));
+        assertTrue(lightenedXml.contains("name=\"order\""));
+        assertTrue(lightenedXml.contains("name=\"OrderType\""));
+        assertFalse(lightenedXml.contains("name=\"invoice\""));
+        assertFalse(lightenedXml.contains("name=\"InvoiceType\""));
+
+        SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI)
+                .newSchema(new StreamSource(new StringReader(lightenedXml)))
+                .newValidator()
+                .validate(new StreamSource(new StringReader(instanceXml)));
     }
 
     private static Path fixture(String name) throws Exception {

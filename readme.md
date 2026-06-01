@@ -45,7 +45,10 @@ Example usage:
 ```java
 import com.xmlhelpline.schemalightener.SchemaLightener;
 import com.xmlhelpline.schemalightener.TransformationResult;
+import com.xmlhelpline.schemalightener.InMemoryTransformationResult;
+import com.xmlhelpline.schemalightener.XmlInput;
 
+import java.net.URI;
 import java.nio.file.Paths;
 
 SchemaLightener schemaLightener = new SchemaLightener();
@@ -62,6 +65,31 @@ TransformationResult lightened = schemaLightener.lightenSchema(
 TransformationResult flattenedWsdl = schemaLightener.flattenWsdl(
         Paths.get("service.wsdl"),
         Paths.get("build/wsdl"));
+```
+
+The API also supports in-memory inputs and outputs. This is usually the most convenient style when embedding the library in another Java application:
+
+```java
+String schemaXml = """
+        <xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+            <xsd:element name="order" type="xsd:string"/>
+        </xsd:schema>
+        """;
+
+InMemoryTransformationResult result = schemaLightener.flattenSchema(schemaXml);
+String flattenedSchema = result.findResultDocument("schema.xsd")
+        .orElseThrow(() -> new IllegalStateException("No schema result produced"));
+```
+
+When an in-memory document needs to resolve relative includes/imports, provide stable system IDs:
+
+```java
+XmlInput commonSchema = XmlInput.fromString(commonSchemaXml, URI.create("memory:/schemas/common.xsd"));
+
+InMemoryTransformationResult flattened = schemaLightener.flattenSchema(
+        rootSchemaXml,
+        URI.create("memory:/schemas/root.xsd"),
+        commonSchema);
 ```
 
 ### Definitions
