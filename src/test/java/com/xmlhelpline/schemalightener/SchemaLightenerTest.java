@@ -7,7 +7,6 @@ import javax.xml.XMLConstants;
 import javax.xml.transform.stream.StreamSource;
 import javax.xml.validation.SchemaFactory;
 import java.io.StringReader;
-import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -32,7 +31,8 @@ class SchemaLightenerTest {
         TransformationResult result = schemaLightener.flattenSchema(sourceSchema, outputDirectory);
 
         assertEquals(TransformationOperation.FLATTEN_SCHEMA, result.getOperation());
-        Path flattenedSchema = findOutputFile(result, "root.xsd");
+        Path flattenedSchema = result.requireSingleOutputFile();
+        assertEquals(flattenedSchema, result.requireOutputFile("root.xsd"));
         String flattenedXml = read(flattenedSchema);
         assertTrue(flattenedXml.contains("OrderType"));
         assertTrue(flattenedXml.contains("LineType"));
@@ -41,17 +41,13 @@ class SchemaLightenerTest {
 
     @Test
     void flattenSchemaCanUseStringInputsAndReturnResultDocumentsInMemory() throws Exception {
-        URI rootUri = URI.create("memory:/schemas/root.xsd");
-        URI commonUri = URI.create("memory:/schemas/common.xsd");
-
         InMemoryTransformationResult result = schemaLightener.flattenSchema(
-                read(fixture("flatten/root.xsd")),
-                rootUri,
-                XmlInput.fromString(read(fixture("flatten/common.xsd")), commonUri));
+                XmlInput.fromString(read(fixture("flatten/root.xsd")), "root.xsd"),
+                XmlInput.fromString(read(fixture("flatten/common.xsd")), "common.xsd"));
 
         assertEquals(TransformationOperation.FLATTEN_SCHEMA, result.getOperation());
-        String flattenedXml = result.findResultDocument("root.xsd")
-                .orElseThrow(() -> new AssertionError("Missing root.xsd result: " + result.getResultDocuments().keySet()));
+        String flattenedXml = result.requireSingleResultDocument();
+        assertEquals(flattenedXml, result.requireResultDocument("root.xsd"));
         assertTrue(flattenedXml.contains("OrderType"));
         assertTrue(flattenedXml.contains("LineType"));
         assertFalse(flattenedXml.contains("schemaLocation=\"common.xsd\""));
@@ -59,19 +55,13 @@ class SchemaLightenerTest {
 
     @Test
     void flattenSchemaCanResolveImportsFromInMemoryDocuments() throws Exception {
-        URI rootUri = URI.create("memory:/schemas/root.xsd");
-        URI commonUri = URI.create("memory:/schemas/common.xsd");
-
         InMemoryTransformationResult result = schemaLightener.flattenSchema(
-                read(fixture("flatten-import/root.xsd")),
-                rootUri,
-                XmlInput.fromString(read(fixture("flatten-import/common.xsd")), commonUri));
+                XmlInput.fromString(read(fixture("flatten-import/root.xsd")), "root.xsd"),
+                XmlInput.fromString(read(fixture("flatten-import/common.xsd")), "common.xsd"));
 
         assertEquals(TransformationOperation.FLATTEN_SCHEMA, result.getOperation());
-        String rootXml = result.findResultDocument("root.xsd")
-                .orElseThrow(() -> new AssertionError("Missing root.xsd result: " + result.getResultDocuments().keySet()));
-        String commonXml = result.findResultDocument("common.xsd")
-                .orElseThrow(() -> new AssertionError("Missing common.xsd result: " + result.getResultDocuments().keySet()));
+        String rootXml = result.requireResultDocument("root.xsd");
+        String commonXml = result.requireResultDocument("common.xsd");
         assertTrue(rootXml.contains("namespace=\"urn:test:common\""));
         assertTrue(rootXml.contains("schemaLocation=\"../urn_test_common/common.xsd\""));
         assertTrue(commonXml.contains("CommonType"));
@@ -86,7 +76,7 @@ class SchemaLightenerTest {
         TransformationResult result = schemaLightener.lightenSchema(sourceSchema, instance, outputDirectory);
 
         assertEquals(TransformationOperation.LIGHTEN_SCHEMA, result.getOperation());
-        Path lightenedSchema = findOutputFile(result, "catalog.xsd");
+        Path lightenedSchema = result.requireOutputFile("catalog.xsd");
         String lightenedXml = read(lightenedSchema);
         assertTrue(lightenedXml.contains("name=\"order\""));
         assertTrue(lightenedXml.contains("name=\"OrderType\""));
@@ -105,14 +95,11 @@ class SchemaLightenerTest {
         String instanceXml = read(fixture("lighten/order.xml"));
 
         InMemoryTransformationResult result = schemaLightener.lightenSchema(
-                new StringReader(schemaXml),
-                URI.create("memory:/schemas/catalog.xsd"),
-                new StringReader(instanceXml),
-                URI.create("memory:/instances/order.xml"));
+                XmlInput.fromReader(new StringReader(schemaXml), "catalog.xsd"),
+                XmlInput.fromReader(new StringReader(instanceXml), "order.xml"));
 
         assertEquals(TransformationOperation.LIGHTEN_SCHEMA, result.getOperation());
-        String lightenedXml = result.findResultDocument("catalog.xsd")
-                .orElseThrow(() -> new AssertionError("Missing catalog.xsd result: " + result.getResultDocuments().keySet()));
+        String lightenedXml = result.requireResultDocument("catalog.xsd");
         assertTrue(lightenedXml.contains("name=\"order\""));
         assertTrue(lightenedXml.contains("name=\"OrderType\""));
         assertFalse(lightenedXml.contains("name=\"invoice\""));
@@ -131,7 +118,7 @@ class SchemaLightenerTest {
 
         TransformationResult result = schemaLightener.lightenSchema(sourceSchema, instance, outputDirectory);
 
-        Path lightenedSchema = findOutputFile(result, "envelope.xsd");
+        Path lightenedSchema = result.requireOutputFile("envelope.xsd");
         String lightenedXml = read(lightenedSchema);
         assertTrue(lightenedXml.contains("KeepRequestType"));
         assertFalse(lightenedXml.contains("DropRequestType"));
@@ -146,13 +133,80 @@ class SchemaLightenerTest {
     }
 
     @Test
+    void flattenAndLightenSchemaFlattensIncludesBeforeLightening() throws Exception {
+        Path sourceSchema = fixture("flatten-lighten/root.xsd");
+        Path instance = fixture("flatten-lighten/order.xml");
+
+        TransformationResult result = schemaLightener.flattenAndLightenSchema(sourceSchema, instance, outputDirectory);
+
+        assertEquals(TransformationOperation.FLATTEN_AND_LIGHTEN_SCHEMA, result.getOperation());
+        assertEquals(sourceSchema.toAbsolutePath().normalize(), result.getSource());
+        Path lightenedSchema = result.requireSingleOutputFile();
+        String lightenedXml = read(lightenedSchema);
+        assertTrue(lightenedXml.contains("name=\"order\""));
+        assertTrue(lightenedXml.contains("name=\"OrderType\""));
+        assertFalse(lightenedXml.contains("schemaLocation=\"common.xsd\""));
+        assertFalse(lightenedXml.contains("schemaLocation=\"unused.xsd\""));
+        assertFalse(lightenedXml.contains("UnusedType"));
+
+        SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI)
+                .newSchema(lightenedSchema.toFile())
+                .newValidator()
+                .validate(new StreamSource(instance.toFile()));
+    }
+
+    @Test
+    void flattenAndLightenSchemaCanUseDefaultStringInputs() throws Exception {
+        String schemaXml = read(fixture("lighten/catalog.xsd"));
+        String instanceXml = read(fixture("lighten/order.xml"));
+
+        InMemoryTransformationResult result = schemaLightener.flattenAndLightenSchema(schemaXml, instanceXml);
+
+        assertEquals(TransformationOperation.FLATTEN_AND_LIGHTEN_SCHEMA, result.getOperation());
+        String lightenedXml = result.requireSingleResultDocument();
+        assertEquals(lightenedXml, result.requireResultDocument("schema.xsd"));
+        assertTrue(lightenedXml.contains("name=\"order\""));
+        assertTrue(lightenedXml.contains("name=\"OrderType\""));
+        assertFalse(lightenedXml.contains("name=\"invoice\""));
+        assertFalse(lightenedXml.contains("name=\"InvoiceType\""));
+
+        SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI)
+                .newSchema(new StreamSource(new StringReader(lightenedXml)))
+                .newValidator()
+                .validate(new StreamSource(new StringReader(instanceXml)));
+    }
+
+    @Test
+    void flattenAndLightenSchemaCanUseReadersAndReturnResultDocumentsInMemory() throws Exception {
+        InMemoryTransformationResult result = schemaLightener.flattenAndLightenSchema(
+                XmlInput.fromReader(new StringReader(read(fixture("flatten-lighten/root.xsd"))), "root.xsd"),
+                XmlInput.fromReader(new StringReader(read(fixture("flatten-lighten/order.xml"))), "order.xml"),
+                XmlInput.fromString(read(fixture("flatten-lighten/common.xsd")), "common.xsd"),
+                XmlInput.fromString(read(fixture("flatten-lighten/unused.xsd")), "unused.xsd"));
+
+        assertEquals(TransformationOperation.FLATTEN_AND_LIGHTEN_SCHEMA, result.getOperation());
+        String lightenedXml = result.requireSingleResultDocument();
+        assertEquals(lightenedXml, result.requireResultDocument("root.xsd"));
+        assertTrue(lightenedXml.contains("name=\"order\""));
+        assertTrue(lightenedXml.contains("name=\"OrderType\""));
+        assertFalse(lightenedXml.contains("schemaLocation=\"common.xsd\""));
+        assertFalse(lightenedXml.contains("schemaLocation=\"unused.xsd\""));
+        assertFalse(lightenedXml.contains("UnusedType"));
+
+        SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI)
+                .newSchema(new StreamSource(new StringReader(lightenedXml)))
+                .newValidator()
+                .validate(new StreamSource(new StringReader(read(fixture("flatten-lighten/order.xml")))));
+    }
+
+    @Test
     void flattenWsdlMergesSchemaDependencies() throws Exception {
         Path sourceWsdl = fixture("wsdl/service.wsdl");
 
         TransformationResult result = schemaLightener.flattenWsdl(sourceWsdl, outputDirectory);
 
         assertEquals(TransformationOperation.FLATTEN_WSDL, result.getOperation());
-        Path flattenedWsdl = findOutputFile(result, "service.wsdl");
+        Path flattenedWsdl = result.requireOutputFile("service.wsdl");
         String flattenedXml = read(flattenedWsdl);
         assertTrue(flattenedXml.contains("SubmitOrderRequest"));
         assertTrue(flattenedXml.contains("OrderType"));
@@ -163,15 +217,6 @@ class SchemaLightenerTest {
         URL resource = SchemaLightenerTest.class.getResource("/com/xmlhelpline/schemalightener/fixtures/" + name);
         assertNotNull(resource, "Missing test fixture: " + name);
         return Paths.get(resource.toURI());
-    }
-
-    private static Path findOutputFile(TransformationResult result, String fileName) {
-        for (Path outputFile : result.getOutputFiles()) {
-            if (outputFile.getFileName().toString().equals(fileName)) {
-                return outputFile;
-            }
-        }
-        throw new AssertionError("Expected output file named " + fileName + " in " + result.getOutputFiles());
     }
 
     private static String read(Path path) throws Exception {

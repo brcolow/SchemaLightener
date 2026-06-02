@@ -88,23 +88,23 @@ String flattenedSchema = result.findResultDocument("schema.xsd")
         .orElseThrow(() -> new IllegalStateException("No schema result produced"));
 ```
 
-When in-memory documents need to resolve relative includes or imports, provide stable absolute system IDs:
+When in-memory documents need to resolve relative includes or imports, provide matching logical paths:
 
 ```java
 import com.xmlhelpline.schemalightener.InMemoryTransformationResult;
 import com.xmlhelpline.schemalightener.XmlInput;
 
-import java.net.URI;
-
 XmlInput commonSchema = XmlInput.fromString(
         commonSchemaXml,
-        URI.create("memory:/schemas/common.xsd"));
+        "schemas/common.xsd");
 
 InMemoryTransformationResult flattened = schemaLightener.flattenSchema(
-        rootSchemaXml,
-        URI.create("memory:/schemas/root.xsd"),
+        XmlInput.fromString(rootSchemaXml, "schemas/root.xsd"),
         commonSchema);
 ```
+
+The logical path is not a real file path; it is only used to resolve relative schema references between in-memory
+documents.
 
 ## Requirements
 

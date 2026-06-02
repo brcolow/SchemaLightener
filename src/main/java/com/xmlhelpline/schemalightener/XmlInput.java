@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -14,6 +15,8 @@ import java.util.Objects;
  * Reusable XML input for the in-memory SchemaLightener API.
  */
 public final class XmlInput {
+    private static final URI MEMORY_BASE_URI = URI.create("memory:/schemalightener/");
+
     private final String xml;
     private final Path path;
     private final URI systemId;
@@ -26,9 +29,10 @@ public final class XmlInput {
 
     /**
      * Create reusable XML input from a string.
+     * Most callers can use {@link #fromString(String, String)} with a logical path instead.
      *
      * @param xml XML document content
-     * @param systemId absolute system ID used for relative URI resolution
+     * @param systemId absolute system ID used for advanced relative URI resolution
      * @return XML input
      */
     public static XmlInput fromString(String xml, URI systemId) {
@@ -37,10 +41,24 @@ public final class XmlInput {
     }
 
     /**
+     * Create reusable XML input from a string with a logical in-memory path.
+     * The logical path is used only to resolve relative XML Schema includes/imports
+     * between in-memory documents. It must be relative, such as {@code schemas/root.xsd}.
+     *
+     * @param xml XML document content
+     * @param logicalPath relative logical path used for in-memory URI resolution
+     * @return XML input
+     */
+    public static XmlInput fromString(String xml, String logicalPath) {
+        return fromString(xml, logicalPathSystemId(logicalPath));
+    }
+
+    /**
      * Create reusable XML input from a reader.
+     * Most callers can use {@link #fromReader(Reader, String)} with a logical path instead.
      *
      * @param reader XML document reader
-     * @param systemId absolute system ID used for relative URI resolution
+     * @param systemId absolute system ID used for advanced relative URI resolution
      * @return XML input
      */
     public static XmlInput fromReader(Reader reader, URI systemId) {
@@ -50,6 +68,19 @@ public final class XmlInput {
         } catch (IOException e) {
             throw new SchemaLightenerException("Unable to read XML input from reader", e);
         }
+    }
+
+    /**
+     * Create reusable XML input from a reader with a logical in-memory path.
+     * The logical path is used only to resolve relative XML Schema includes/imports
+     * between in-memory documents. It must be relative, such as {@code schemas/root.xsd}.
+     *
+     * @param reader XML document reader
+     * @param logicalPath relative logical path used for in-memory URI resolution
+     * @return XML input
+     */
+    public static XmlInput fromReader(Reader reader, String logicalPath) {
+        return fromReader(reader, logicalPathSystemId(logicalPath));
     }
 
     /**
@@ -91,6 +122,31 @@ public final class XmlInput {
             throw new SchemaLightenerException("systemId must be absolute: " + systemId);
         }
         return systemId;
+    }
+
+    private static URI logicalPathSystemId(String logicalPath) {
+        Objects.requireNonNull(logicalPath, "logicalPath must not be null");
+        String normalizedPath = logicalPath.replace('\\', '/');
+        if (normalizedPath.trim().isEmpty()) {
+            throw new SchemaLightenerException("logicalPath must not be empty");
+        }
+        if (normalizedPath.startsWith("/")) {
+            throw new SchemaLightenerException("logicalPath must be relative: " + logicalPath);
+        }
+        if (normalizedPath.indexOf(':') >= 0) {
+            throw new SchemaLightenerException("logicalPath must be relative; use the URI overload for absolute system IDs");
+        }
+
+        try {
+            URI logicalUri = new URI(null, null, normalizedPath, null);
+            URI systemId = MEMORY_BASE_URI.resolve(logicalUri).normalize();
+            if (!systemId.toASCIIString().startsWith(MEMORY_BASE_URI.toASCIIString())) {
+                throw new SchemaLightenerException("logicalPath must stay within the in-memory document set: " + logicalPath);
+            }
+            return systemId;
+        } catch (URISyntaxException e) {
+            throw new SchemaLightenerException("logicalPath is not a valid relative path: " + logicalPath, e);
+        }
     }
 
     private static String readAll(Reader reader) throws IOException {

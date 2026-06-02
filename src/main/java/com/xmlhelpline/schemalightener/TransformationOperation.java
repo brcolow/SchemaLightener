@@ -15,6 +15,11 @@ public enum TransformationOperation {
     LIGHTEN_SCHEMA,
 
     /**
+     * Flatten an XML Schema and then lighten the flattened result using an XML instance.
+     */
+    FLATTEN_AND_LIGHTEN_SCHEMA,
+
+    /**
      * Flatten a WSDL and its schema dependencies.
      */
     FLATTEN_WSDL

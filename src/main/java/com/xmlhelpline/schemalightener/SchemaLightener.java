@@ -19,7 +19,9 @@ import java.net.URI;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -199,6 +201,124 @@ public final class SchemaLightener {
                 schema,
                 parameters,
                 allSupportingDocuments);
+    }
+
+    /**
+     * Flatten an XML Schema and then lighten the flattened schema using an XML instance as the subset indicator.
+     * The intermediate flattened schema is written to a temporary directory and removed before this method returns.
+     *
+     * @param schema source XML Schema
+     * @param instance XML instance describing the desired subset
+     * @param outputDirectory destination directory for the final lightened schema files
+     * @return transform result with final lightened output files
+     */
+    public TransformationResult flattenAndLightenSchema(Path schema, Path instance, Path outputDirectory) {
+        Path normalizedSchema = requireReadableFile(schema, "schema");
+        Path flattenedDirectory = null;
+        try {
+            flattenedDirectory = Files.createTempDirectory("schemalightener-flatten-");
+            TransformationResult flattened = flattenSchema(normalizedSchema, flattenedDirectory);
+            Path flattenedRootSchema = findRootOutputFile(flattened, normalizedSchema);
+            TransformationResult lightened = lightenSchema(flattenedRootSchema, instance, outputDirectory);
+            return new TransformationResult(
+                    TransformationOperation.FLATTEN_AND_LIGHTEN_SCHEMA,
+                    normalizedSchema,
+                    lightened.getOutputDirectory(),
+                    lightened.getOutputFiles(),
+                    lightened.getPrimaryResult());
+        } catch (IOException e) {
+            throw new SchemaLightenerException("Unable to create temporary output for flattening " + normalizedSchema, e);
+        } finally {
+            deleteRecursivelyQuietly(flattenedDirectory);
+        }
+    }
+
+    /**
+     * Flatten and then lighten an XML Schema supplied as strings, returning generated documents in memory.
+     *
+     * @param schemaXml source XML Schema content
+     * @param instanceXml XML instance describing the desired subset
+     * @return in-memory transform result with final lightened documents
+     */
+    public InMemoryTransformationResult flattenAndLightenSchema(String schemaXml, String instanceXml) {
+        return flattenAndLightenSchema(
+                schemaXml,
+                URI.create("memory:/schemalightener/schema.xsd"),
+                instanceXml,
+                URI.create("memory:/schemalightener/instance.xml"));
+    }
+
+    /**
+     * Flatten and then lighten an XML Schema supplied as strings, returning generated documents in memory.
+     *
+     * @param schemaXml source XML Schema content
+     * @param schemaSystemId base URI used for resolving schema includes/imports
+     * @param instanceXml XML instance describing the desired subset
+     * @param instanceSystemId URI used for resolving the instance document
+     * @param supportingDocuments optional in-memory documents available to document() lookups
+     * @return in-memory transform result with final lightened documents
+     */
+    public InMemoryTransformationResult flattenAndLightenSchema(
+            String schemaXml,
+            URI schemaSystemId,
+            String instanceXml,
+            URI instanceSystemId,
+            XmlInput... supportingDocuments) {
+        return flattenAndLightenSchema(
+                XmlInput.fromString(schemaXml, schemaSystemId),
+                XmlInput.fromString(instanceXml, instanceSystemId),
+                supportingDocuments);
+    }
+
+    /**
+     * Flatten and then lighten an XML Schema supplied by readers, returning generated documents in memory.
+     *
+     * @param schemaReader source XML Schema reader
+     * @param schemaSystemId base URI used for resolving schema includes/imports
+     * @param instanceReader XML instance reader
+     * @param instanceSystemId URI used for resolving the instance document
+     * @param supportingDocuments optional in-memory documents available to document() lookups
+     * @return in-memory transform result with final lightened documents
+     */
+    public InMemoryTransformationResult flattenAndLightenSchema(
+            Reader schemaReader,
+            URI schemaSystemId,
+            Reader instanceReader,
+            URI instanceSystemId,
+            XmlInput... supportingDocuments) {
+        return flattenAndLightenSchema(
+                XmlInput.fromReader(schemaReader, schemaSystemId),
+                XmlInput.fromReader(instanceReader, instanceSystemId),
+                supportingDocuments);
+    }
+
+    /**
+     * Flatten and then lighten an XML Schema, returning generated documents in memory.
+     *
+     * @param schema source XML Schema
+     * @param instance XML instance describing the desired subset
+     * @param supportingDocuments optional in-memory documents available to document() lookups
+     * @return in-memory transform result with final lightened documents
+     */
+    public InMemoryTransformationResult flattenAndLightenSchema(
+            XmlInput schema,
+            XmlInput instance,
+            XmlInput... supportingDocuments) {
+        Objects.requireNonNull(schema, "schema must not be null");
+        Objects.requireNonNull(instance, "instance must not be null");
+
+        InMemoryTransformationResult flattened = flattenSchema(schema, supportingDocuments);
+        URI flattenedRootUri = findRootResultDocumentUri(flattened, schema.getSystemId());
+        String flattenedRootXml = flattened.getResultDocuments().get(flattenedRootUri);
+        InMemoryTransformationResult lightened = lightenSchema(
+                XmlInput.fromString(flattenedRootXml, flattenedRootUri),
+                instance,
+                resultDocumentsExcept(flattened.getResultDocuments(), flattenedRootUri));
+        return new InMemoryTransformationResult(
+                TransformationOperation.FLATTEN_AND_LIGHTEN_SCHEMA,
+                schema.getSystemId(),
+                lightened.getPrimaryResult(),
+                lightened.getResultDocuments());
     }
 
     /**
@@ -466,6 +586,74 @@ public final class SchemaLightener {
             System.arraycopy(rest, 0, values, 1, restLength);
         }
         return values;
+    }
+
+    private static Path findRootOutputFile(TransformationResult result, Path source) {
+        String sourceFileName = source.getFileName().toString();
+        return result.findOutputFile(sourceFileName)
+                .orElseGet(() -> result.singleOutputFile()
+                        .orElseThrow(() -> new SchemaLightenerException(
+                                "Unable to identify flattened root schema for "
+                                        + source + " from outputs " + result.getOutputFiles())));
+    }
+
+    private static URI findRootResultDocumentUri(InMemoryTransformationResult result, URI sourceSystemId) {
+        String sourceFileName = resultFileName(sourceSystemId);
+        for (URI uri : result.getResultDocuments().keySet()) {
+            if (uriEndsWithFileName(uri, sourceFileName)) {
+                return uri;
+            }
+        }
+        if (result.getResultDocuments().size() == 1) {
+            return result.getResultDocuments().keySet().iterator().next();
+        }
+        throw new SchemaLightenerException(
+                "Unable to identify flattened root schema for "
+                        + sourceSystemId + " from result documents " + result.getResultDocuments().keySet());
+    }
+
+    private static String resultFileName(URI uri) {
+        String path = uri.getPath();
+        if (path == null || path.isEmpty()) {
+            return uri.toASCIIString();
+        }
+        int slash = path.lastIndexOf('/');
+        return slash >= 0 ? path.substring(slash + 1) : path;
+    }
+
+    private static boolean uriEndsWithFileName(URI uri, String fileName) {
+        String path = uri.getPath();
+        if (path != null && (path.equals(fileName) || path.endsWith("/" + fileName))) {
+            return true;
+        }
+        String uriText = uri.toASCIIString();
+        return uriText.equals(fileName) || uriText.endsWith("/" + fileName);
+    }
+
+    private static XmlInput[] resultDocumentsExcept(Map<URI, String> resultDocuments, URI excludedUri) {
+        List<XmlInput> inputs = new ArrayList<XmlInput>();
+        for (Map.Entry<URI, String> entry : resultDocuments.entrySet()) {
+            if (!entry.getKey().equals(excludedUri)) {
+                inputs.add(XmlInput.fromString(entry.getValue(), entry.getKey()));
+            }
+        }
+        return inputs.toArray(new XmlInput[inputs.size()]);
+    }
+
+    private static void deleteRecursivelyQuietly(Path directory) {
+        if (directory == null || !Files.exists(directory)) {
+            return;
+        }
+        try (Stream<Path> paths = Files.walk(directory)) {
+            List<Path> orderedPaths = paths
+                    .sorted(Comparator.reverseOrder())
+                    .collect(Collectors.toList());
+            for (Path path : orderedPaths) {
+                Files.deleteIfExists(path);
+            }
+        } catch (IOException ignored) {
+            // The temporary directory is best-effort cleanup; the final result has already been produced.
+        }
     }
 
     private static Path requireReadableFile(Path path, String label) {

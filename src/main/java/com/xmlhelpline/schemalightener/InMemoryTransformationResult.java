@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -70,6 +71,7 @@ public final class InMemoryTransformationResult {
      * @return generated XML when a matching result document exists
      */
     public Optional<String> findResultDocument(String fileName) {
+        Objects.requireNonNull(fileName, "fileName must not be null");
         for (Map.Entry<URI, String> entry : resultDocuments.entrySet()) {
             String path = entry.getKey().getPath();
             if (path != null && path.endsWith("/" + fileName)) {
@@ -81,5 +83,41 @@ public final class InMemoryTransformationResult {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Find a generated result document by its trailing file name, throwing when it is not present.
+     *
+     * @param fileName result document file name
+     * @return generated XML for the matching result document
+     */
+    public String requireResultDocument(String fileName) {
+        return findResultDocument(fileName)
+                .orElseThrow(() -> new SchemaLightenerException(
+                        "Expected result document named " + fileName + " in " + resultDocuments.keySet()));
+    }
+
+    /**
+     * Return the only generated result document when exactly one document was produced.
+     *
+     * @return the single result document XML, or empty when zero or multiple documents were produced
+     */
+    public Optional<String> singleResultDocument() {
+        if (resultDocuments.size() == 1) {
+            return Optional.of(resultDocuments.values().iterator().next());
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Return the only generated result document, throwing when zero or multiple documents were produced.
+     *
+     * @return the single result document XML
+     */
+    public String requireSingleResultDocument() {
+        return singleResultDocument()
+                .orElseThrow(() -> new SchemaLightenerException(
+                        "Expected exactly one result document but found "
+                                + resultDocuments.size() + ": " + resultDocuments.keySet()));
     }
 }
