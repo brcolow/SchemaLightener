@@ -125,6 +125,27 @@ class SchemaLightenerTest {
     }
 
     @Test
+    void lightenSchemaRemovesEmptyModelGroupsAndWhitespaceOnlyLines() throws Exception {
+        Path sourceSchema = fixture("lighten-pruned/envelope.xsd");
+        Path instance = fixture("lighten-pruned/envelope.xml");
+
+        TransformationResult result = schemaLightener.lightenSchema(sourceSchema, instance, outputDirectory);
+
+        Path lightenedSchema = findOutputFile(result, "envelope.xsd");
+        String lightenedXml = read(lightenedSchema);
+        assertTrue(lightenedXml.contains("KeepRequestType"));
+        assertFalse(lightenedXml.contains("DropRequestType"));
+        assertFalse(lightenedXml.contains("UnusedValue"));
+        assertFalse(lightenedXml.matches("(?s).*<xsd:sequence[^>]*>\\s*</xsd:sequence>.*"));
+        assertFalse(lightenedXml.matches("(?m).*^\\s+$.*"));
+
+        SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI)
+                .newSchema(lightenedSchema.toFile())
+                .newValidator()
+                .validate(new StreamSource(instance.toFile()));
+    }
+
+    @Test
     void flattenWsdlMergesSchemaDependencies() throws Exception {
         Path sourceWsdl = fixture("wsdl/service.wsdl");
 

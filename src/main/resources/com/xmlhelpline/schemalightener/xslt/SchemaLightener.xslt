@@ -23,6 +23,7 @@ the initial 1.0 requirement.
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	<xsl:output indent="yes" method="xml" encoding="utf-8" omit-xml-declaration="no"
 		exclude-result-prefixes="xsi" media-type="text/xml"/>
+	<xsl:strip-space elements="xsd:*"/>
 	<xsl:include href="directories.xslt"/>
 	<xsl:include href="common.xslt"/>
 
@@ -634,6 +635,8 @@ attributes template
 		<xsl:copy-of select="."/>
 	</xsl:template>
 
+	<xsl:template match="text()[not(normalize-space())]"/>
+
 	<!--  
 ***********************************  
 everything else template
@@ -644,6 +647,21 @@ everything else template
 			<xsl:apply-templates select="@*"/>
 			<xsl:apply-templates/>
 		</xsl:copy>
+	</xsl:template>
+
+	<xsl:template match="xsd:sequence | xsd:all">
+		<xsl:variable name="content">
+			<content>
+				<xsl:apply-templates select="@*"/>
+				<xsl:apply-templates/>
+			</content>
+		</xsl:variable>
+		<xsl:if test="$content/content/*">
+			<xsl:copy>
+				<xsl:copy-of select="$content/content/@*"/>
+				<xsl:copy-of select="$content/content/node()"/>
+			</xsl:copy>
+		</xsl:if>
 	</xsl:template>
 
 	<!--  
@@ -908,10 +926,18 @@ named types template
 		<xsl:if
 			test="$instanceTypeNames/instanceTypeNames/t[@localname=$name][$uri = @uri]
 			| $instanceTypeNames/instanceTypeNames/t[@localname=$name and @localname!='' and $uri = @uri]">
-			<xsl:copy>
-				<xsl:apply-templates select="@*"/>
-				<xsl:apply-templates/>
-			</xsl:copy>
+			<xsl:variable name="content">
+				<content>
+					<xsl:apply-templates select="@*"/>
+					<xsl:apply-templates/>
+				</content>
+			</xsl:variable>
+			<xsl:if test="$content/content/*">
+				<xsl:copy>
+					<xsl:copy-of select="$content/content/@*"/>
+					<xsl:copy-of select="$content/content/node()"/>
+				</xsl:copy>
+			</xsl:if>
 		</xsl:if>
 
 
