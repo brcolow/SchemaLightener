@@ -543,6 +543,55 @@ but instead use position() because the former can return multiple numbers if som
 
 	<xsl:template match="@*" mode="instanceTypeNames"/>
 
+	<xsl:template match="xsd:choice" mode="instanceTypeNames">
+		<xsl:param name="typeNameRecursionCheck" tunnel="yes"/>
+		<xsl:apply-templates select="@*" mode="instanceTypeNames">
+			<xsl:with-param name="typeNameRecursionCheck" tunnel="yes">
+				<xsl:value-of select="$typeNameRecursionCheck"/>
+			</xsl:with-param>
+		</xsl:apply-templates>
+		<xsl:for-each select="xsd:element[@name or @ref]">
+			<xsl:variable name="localname">
+				<xsl:choose>
+					<xsl:when test="@ref and contains(@ref,':')">
+						<xsl:value-of select="substring-after(@ref,':')"/>
+					</xsl:when>
+					<xsl:when test="@ref">
+						<xsl:value-of select="@ref"/>
+					</xsl:when>
+					<xsl:otherwise>
+						<xsl:value-of select="@name"/>
+					</xsl:otherwise>
+				</xsl:choose>
+			</xsl:variable>
+			<xsl:variable name="uri">
+				<xsl:choose>
+					<xsl:when test="@ref">
+						<xsl:call-template name="get-uri-elementNodeWithRefAttribute"/>
+					</xsl:when>
+					<xsl:otherwise>
+						<xsl:call-template name="get-uri-elementNodeWithNameAttribute"/>
+					</xsl:otherwise>
+				</xsl:choose>
+			</xsl:variable>
+			<xsl:if
+				test="$instanceComponentNames/instanceComponentNames/e[@localname=$localname][@uri=$uri]">
+				<xsl:apply-templates select="." mode="instanceTypeNames">
+					<xsl:with-param name="typeNameRecursionCheck" tunnel="yes">
+						<xsl:value-of select="$typeNameRecursionCheck"/>
+						<xsl:value-of select="@name"/>
+						<xsl:value-of select="@ref"/>
+					</xsl:with-param>
+				</xsl:apply-templates>
+			</xsl:if>
+		</xsl:for-each>
+		<xsl:apply-templates select="*[not(self::xsd:element)]" mode="instanceTypeNames">
+			<xsl:with-param name="typeNameRecursionCheck" tunnel="yes">
+				<xsl:value-of select="$typeNameRecursionCheck"/>
+			</xsl:with-param>
+		</xsl:apply-templates>
+	</xsl:template>
+
 	<xsl:template match="*" mode="instanceTypeNames">
 		<xsl:param name="typeNameRecursionCheck" tunnel="yes"/>
 		<xsl:variable name="name" select="@name"/>
@@ -932,7 +981,7 @@ named types template
 					<xsl:apply-templates/>
 				</content>
 			</xsl:variable>
-			<xsl:if test="$content/content/*">
+			<xsl:if test="$content/content/* or $content/content/@*">
 				<xsl:copy>
 					<xsl:copy-of select="$content/content/@*"/>
 					<xsl:copy-of select="$content/content/node()"/>

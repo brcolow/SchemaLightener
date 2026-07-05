@@ -37,3 +37,15 @@ jobs:
       - name: Verify
         if: runner.os == 'Windows'
         run: .\mvnw.cmd -B verify
+
+      - name: Generate sample data report
+        if: runner.os == 'Linux'
+        run: ./mvnw -B -Dtest=SampleDataReportTest -Dschemalightener.sampleReport=true test
+
+      - name: Upload sample data report
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: schemalightener-sample-report
+          path: target/schemalightener-sample-report/index.html
+          if-no-files-found: error
