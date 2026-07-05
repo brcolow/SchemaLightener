@@ -5,6 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import javax.xml.XMLConstants;
 import javax.xml.transform.stream.StreamSource;
+import javax.xml.validation.Schema;
 import javax.xml.validation.SchemaFactory;
 import java.io.StringReader;
 import java.net.URL;
@@ -16,6 +17,7 @@ import java.nio.file.Paths;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SchemaLightenerTest {
@@ -245,17 +247,23 @@ class SchemaLightenerTest {
 
         Path lightenedSchema = result.requireOutputFile("AcknowledgeCreditApplication.xsd");
         String lightenedXml = read(lightenedSchema);
-        assertTrue(lightenedXml.contains("name=\"ApplicationFinanceType\" mixed=\"true\""));
+        assertTrue(lightenedXml.contains("name=\"ApplicationFinanceType\""));
+        assertFalse(lightenedXml.contains("name=\"ApplicationFinanceType\" mixed=\"true\""));
         assertTrue(lightenedXml.matches(
-                "(?s).*<xsd:complexType name=\"ApplicationFinanceType\" mixed=\"true\">.*<xsd:sequence[^>]*/>.*</xsd:complexType>.*"));
+                "(?s).*<xsd:complexType name=\"ApplicationFinanceType\">.*<xsd:sequence[^>]*>.*<xsd:any minOccurs=\"0\" maxOccurs=\"0\" processContents=\"skip\"/>.*</xsd:sequence>.*</xsd:complexType>.*"));
         assertFalse(lightenedXml.contains("ref=\"Financing\""));
         assertFalse(lightenedXml.contains("ref=\"TradeInVehicleCredit\""));
         assertFalse(lightenedXml.contains("ref=\"ServiceContractBase\""));
 
-        SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI)
-                .newSchema(lightenedSchema.toFile())
-                .newValidator()
-                .validate(new StreamSource(instance.toFile()));
+        Schema schema = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI)
+                .newSchema(lightenedSchema.toFile());
+        schema.newValidator().validate(new StreamSource(instance.toFile()));
+
+        String invalidTextInstance = read(instance).replaceFirst(
+                "(?s)<ns:ApplicationFinance>.*?</ns:ApplicationFinance>",
+                "<ns:ApplicationFinance>not allowed</ns:ApplicationFinance>");
+        assertThrows(Exception.class, () -> schema.newValidator()
+                .validate(new StreamSource(new StringReader(invalidTextInstance))));
     }
 
     @Test
