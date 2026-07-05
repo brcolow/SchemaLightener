@@ -42,7 +42,7 @@ The JPMS module name is:
 requires com.xmlhelpline.schemalightener;
 ```
 
-The module exports only `com.xmlhelpline.schemalightener`. Saxon HE is used at runtime to execute the bundled XSLT 2.0 stylesheets, but Saxon types are not exposed through the public Java API.
+The module exports only `com.xmlhelpline.schemalightener`. Saxon HE is used at runtime to execute the bundled XSLT 2.0 stylesheets, but Saxon types are not exposed through the public Java API. Keeping Saxon behind the API boundary lets applications use SchemaLightener without compiling against Saxon implementation classes, and it leaves room to upgrade the runtime dependency without changing the library's public contract.
 
 ## Java API
 
@@ -142,25 +142,10 @@ The lightener applies an XSLT stylesheet to an XML Schema and an XML instance th
 
 This is useful when you need a smaller validation schema for a trading partner, implementation profile, standards subset, or internal integration view without hand-editing a large schema.
 
-## Project Layout
-
-- `src/main/java`: Java library API and JPMS descriptor.
-- `src/main/resources/com/xmlhelpline/schemalightener/xslt`: bundled XSLT stylesheets.
-- `src/test/java`: JUnit tests for schema lightening, schema flattening, WSDL flattening, and in-memory APIs.
-- `SampleData`: historical sample schemas and XML instances from standards consortia.
-
-## Historical Testing
-
-Before the project was published on GitHub, a regression run created and validated more than 15,000 generated schema files. A summary is included in `regressiontesting_schemas_validationinfo.txt`.
-
-Historical project notes are available at:
-
-- https://www.xmlhelpline.com/tools/SchemaLightener.php#howmuch
-- https://www.xmlhelpline.com/tools/SchemaLightener.php#tested
-
 ## Authors
 
 * **Paul Kiel** - *Initial work* - [Paul Kiel](https://github.com/pkielgithub)
+* **Mike Ennen** - *Modernization: Maven packaging, Java API, JPMS module, CI, and tests*
 
 ## License
 

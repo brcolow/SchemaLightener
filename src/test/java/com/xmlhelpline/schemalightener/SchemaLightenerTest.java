@@ -200,6 +200,25 @@ class SchemaLightenerTest {
     }
 
     @Test
+    void sampleDataAssessmentStatusRequestCanBeLightened() throws Exception {
+        Path sourceSchema = sampleData("hr-xml/HR-XML-2_5/StandAlone/AssessmentStatusRequest.xsd");
+        Path instance = sampleData("hr-xml/HR-XML-2_5/instances/AssessmentStatusRequest.xml");
+
+        TransformationResult result = schemaLightener.lightenSchema(sourceSchema, instance, outputDirectory);
+
+        assertEquals(TransformationOperation.LIGHTEN_SCHEMA, result.getOperation());
+        Path lightenedSchema = result.requireOutputFile("AssessmentStatusRequest.xsd");
+        String lightenedXml = read(lightenedSchema);
+        assertTrue(lightenedXml.contains("AssessmentStatusRequest"));
+        assertTrue(lightenedXml.contains("ClientId"));
+
+        SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI)
+                .newSchema(lightenedSchema.toFile())
+                .newValidator()
+                .validate(new StreamSource(instance.toFile()));
+    }
+
+    @Test
     void flattenWsdlMergesSchemaDependencies() throws Exception {
         Path sourceWsdl = fixture("wsdl/service.wsdl");
 
@@ -217,6 +236,12 @@ class SchemaLightenerTest {
         URL resource = SchemaLightenerTest.class.getResource("/com/xmlhelpline/schemalightener/fixtures/" + name);
         assertNotNull(resource, "Missing test fixture: " + name);
         return Paths.get(resource.toURI());
+    }
+
+    private static Path sampleData(String name) {
+        Path path = Paths.get("SampleData").resolve(name).toAbsolutePath().normalize();
+        assertTrue(Files.isRegularFile(path), "Missing sample data file: " + path);
+        return path;
     }
 
     private static String read(Path path) throws Exception {
