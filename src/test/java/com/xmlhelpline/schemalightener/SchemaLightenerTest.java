@@ -237,6 +237,28 @@ class SchemaLightenerTest {
     }
 
     @Test
+    void sampleDataAcknowledgeCreditApplicationAllowsWhitespaceOnlyUsedElements() throws Exception {
+        Path sourceSchema = sampleData("star/Rev5.1.4/BODs/Standalone/AcknowledgeCreditApplication.xsd");
+        Path instance = sampleData("star/Rev5.1.4/BODExamples/AcknowledgeCreditApplication.xml");
+
+        TransformationResult result = schemaLightener.lightenSchema(sourceSchema, instance, outputDirectory);
+
+        Path lightenedSchema = result.requireOutputFile("AcknowledgeCreditApplication.xsd");
+        String lightenedXml = read(lightenedSchema);
+        assertTrue(lightenedXml.contains("name=\"ApplicationFinanceType\" mixed=\"true\""));
+        assertTrue(lightenedXml.matches(
+                "(?s).*<xsd:complexType name=\"ApplicationFinanceType\" mixed=\"true\">.*<xsd:sequence[^>]*/>.*</xsd:complexType>.*"));
+        assertFalse(lightenedXml.contains("ref=\"Financing\""));
+        assertFalse(lightenedXml.contains("ref=\"TradeInVehicleCredit\""));
+        assertFalse(lightenedXml.contains("ref=\"ServiceContractBase\""));
+
+        SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI)
+                .newSchema(lightenedSchema.toFile())
+                .newValidator()
+                .validate(new StreamSource(instance.toFile()));
+    }
+
+    @Test
     void flattenWsdlMergesSchemaDependencies() throws Exception {
         Path sourceWsdl = fixture("wsdl/service.wsdl");
 

@@ -705,12 +705,19 @@ everything else template
 				<xsl:apply-templates/>
 			</content>
 		</xsl:variable>
-		<xsl:if test="$content/content/*">
-			<xsl:copy>
-				<xsl:copy-of select="$content/content/@*"/>
-				<xsl:copy-of select="$content/content/node()"/>
-			</xsl:copy>
-		</xsl:if>
+		<xsl:choose>
+			<xsl:when test="$content/content/*">
+				<xsl:copy>
+					<xsl:copy-of select="$content/content/@*"/>
+					<xsl:copy-of select="$content/content/node()"/>
+				</xsl:copy>
+			</xsl:when>
+			<xsl:when test="xsd:element or xsd:choice or xsd:group or xsd:any">
+				<xsl:copy>
+					<xsl:copy-of select="$content/content/@*"/>
+				</xsl:copy>
+			</xsl:when>
+		</xsl:choose>
 	</xsl:template>
 
 	<!--  
@@ -998,7 +1005,16 @@ named types template
 			</xsl:variable>
 			<xsl:if test="$content/content/* or $content/content/@*">
 				<xsl:copy>
-					<xsl:copy-of select="$content/content/@*"/>
+					<xsl:choose>
+						<xsl:when test="$content/content/xsd:sequence[not(node())]
+							or $content/content/xsd:all[not(node())]">
+							<xsl:copy-of select="$content/content/@*[name()!='mixed']"/>
+							<xsl:attribute name="mixed">true</xsl:attribute>
+						</xsl:when>
+						<xsl:otherwise>
+							<xsl:copy-of select="$content/content/@*"/>
+						</xsl:otherwise>
+					</xsl:choose>
 					<xsl:copy-of select="$content/content/node()"/>
 				</xsl:copy>
 			</xsl:if>
