@@ -219,6 +219,24 @@ class SchemaLightenerTest {
     }
 
     @Test
+    void sampleDataAssessmentResultRetainsXmlLangAttribute() throws Exception {
+        Path sourceSchema = sampleData("hr-xml/HR-XML-2_5/StandAlone/AssessmentResult.xsd");
+        Path instance = sampleData("hr-xml/HR-XML-2_5/instances/AssessmentResult.xml");
+
+        TransformationResult result = schemaLightener.lightenSchema(sourceSchema, instance, outputDirectory);
+
+        Path lightenedSchema = result.requireOutputFile("AssessmentResult.xsd");
+        String lightenedXml = read(lightenedSchema);
+        assertTrue(lightenedXml.contains("ref=\"xml:lang\""));
+        assertTrue(read(result.requireOutputFile("xml.xsd")).contains("name=\"lang\""));
+
+        SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI)
+                .newSchema(lightenedSchema.toFile())
+                .newValidator()
+                .validate(new StreamSource(instance.toFile()));
+    }
+
+    @Test
     void flattenWsdlMergesSchemaDependencies() throws Exception {
         Path sourceWsdl = fixture("wsdl/service.wsdl");
 

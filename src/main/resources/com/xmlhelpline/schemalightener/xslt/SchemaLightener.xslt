@@ -215,7 +215,7 @@ but instead use position() because the former can return multiple numbers if som
 					<xsl:for-each-group
 						select="$instance//*[string(resolve-QName(name(.),.))=$qname]/@*"
 						group-by="name()">
-						<a name="{name()}"/>
+						<a name="{name()}" uri="{namespace-uri(.)}" localname="{local-name(.)}"/>
 					</xsl:for-each-group>
 
 				</e>
@@ -257,7 +257,7 @@ but instead use position() because the former can return multiple numbers if som
 						<xsl:for-each-group
 							select="$instance//*[string(resolve-QName(name(.),.))=$qname]/@*"
 							group-by="name()">
-							<a name="{name()}"/>
+							<a name="{name()}" uri="{namespace-uri(.)}" localname="{local-name(.)}"/>
 						</xsl:for-each-group>
 
 					</e>
@@ -731,9 +731,23 @@ xsd:attribute
 						</xsl:otherwise>
 					</xsl:choose>
 				</xsl:variable>
+				<xsl:variable name="uri">
+					<xsl:call-template name="get-uri-attributeNode"/>
+				</xsl:variable>
 
-				<xsl:if test="$instanceComponentNames/instanceComponentNames/e/a[@name=$localname]"
-					>yes</xsl:if>
+				<xsl:choose>
+					<xsl:when test="name()='ref'">
+						<xsl:if
+							test="$instanceComponentNames/instanceComponentNames/e/a[@localname=$localname][$uri = @uri]"
+							>yes</xsl:if>
+					</xsl:when>
+					<xsl:otherwise>
+						<xsl:if
+							test="$instanceComponentNames/instanceComponentNames/e/a[@name=$localname]
+							| $instanceComponentNames/instanceComponentNames/e/a[@localname=$localname][$uri = @uri]"
+							>yes</xsl:if>
+					</xsl:otherwise>
+				</xsl:choose>
 			</xsl:for-each>
 		</xsl:variable>
 		<xsl:if test="$isThereAnElementINeed!=''">
@@ -880,7 +894,8 @@ named element template
 
 		<xsl:if
 			test="$instanceComponentNames/instanceComponentNames/e[@localname=$name][$uri = @uri]
-			| $instanceComponentNames/instanceComponentNames/e/a[@name=$name]">
+			| $instanceComponentNames/instanceComponentNames/e/a[@name=$name]
+			| $instanceComponentNames/instanceComponentNames/e/a[@localname=$name][$uri = @uri]">
 			<xsl:choose>
 				<xsl:when
 					test="(parent::*[local-name()='schema'] or parent::*[local-name()='import'])">
