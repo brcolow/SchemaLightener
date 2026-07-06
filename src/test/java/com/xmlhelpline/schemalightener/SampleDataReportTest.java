@@ -25,9 +25,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -76,40 +78,154 @@ class SampleDataReportTest {
             int index,
             SamplePair samplePair,
             Path generatedDirectory) {
-        Path outputDirectory = generatedDirectory.resolve(String.format(
+        Path sampleOutputDirectory = generatedDirectory.resolve(String.format(
                 Locale.ROOT,
                 "%03d-%s",
                 index,
                 safeFileName(samplePair.instance.getFileName().toString())));
         Counts originalCounts = countSchemaClosure(samplePair.schema);
-        Counts lightenedCounts = Counts.empty();
-        Status status = Status.PASS;
-        String message = "";
-        List<Path> outputFiles = Collections.emptyList();
 
         String sourceValidation = validate(samplePair.schema, samplePair.instance);
         if (!"OK".equals(sourceValidation)) {
-            status = Status.SOURCE_INVALID;
-            message = sourceValidation;
-            return new ReportRow(index, samplePair, status, originalCounts, lightenedCounts, message);
+            return new ReportRow(
+                    index,
+                    samplePair,
+                    originalCounts,
+                    sourceValidation,
+                    GeneratedRun.notRun(),
+                    GeneratedRun.notRun(),
+                    OutputComparison.notCompared("Source schema did not validate the instance"));
+        }
+
+        GeneratedRun directRun = runGeneratedPath(
+                samplePair,
+                sampleOutputDirectory.resolve("direct-lighten"),
+                false);
+        GeneratedRun flattenLightenRun = runGeneratedPath(
+                samplePair,
+                sampleOutputDirectory.resolve("flatten-lighten"),
+                true);
+
+        return new ReportRow(
+                index,
+                samplePair,
+                originalCounts,
+                sourceValidation,
+                directRun,
+                flattenLightenRun,
+                compareOutputs(directRun, flattenLightenRun));
+    }
+
+    private GeneratedRun runGeneratedPath(
+            SamplePair samplePair,
+            Path outputDirectory,
+            boolean flattenFirst) {
+        try {
+            TransformationResult result = flattenFirst
+                    ? schemaLightener.flattenAndLightenSchema(samplePair.schema, samplePair.instance, outputDirectory)
+                    : schemaLightener.lightenSchema(samplePair.schema, samplePair.instance, outputDirectory);
+            List<Path> outputFiles = result.getOutputFiles();
+            Counts counts = countFiles(outputFiles);
+            Path rootOutput = findRootOutput(result, samplePair.schema);
+            String generatedValidation = validate(rootOutput, samplePair.instance);
+            return new GeneratedRun(
+                    "OK".equals(generatedValidation) ? RunStatus.PASS : RunStatus.GENERATED_INVALID,
+                    counts,
+                    generatedValidation,
+                    "OK".equals(generatedValidation) ? "" : generatedValidation,
+                    result.getOutputDirectory(),
+                    outputFiles);
+        } catch (Exception e) {
+            return new GeneratedRun(
+                    RunStatus.TRANSFORM_FAILED,
+                    Counts.empty(),
+                    "Not run",
+                    describe(e),
+                    outputDirectory.toAbsolutePath().normalize(),
+                    Collections.<Path>emptyList());
+        }
+    }
+
+    private OutputComparison compareOutputs(GeneratedRun directRun, GeneratedRun flattenLightenRun) {
+        if (directRun.status == RunStatus.NOT_RUN || flattenLightenRun.status == RunStatus.NOT_RUN) {
+            return OutputComparison.notCompared("One or both paths were not run");
+        }
+        if (directRun.status == RunStatus.TRANSFORM_FAILED || flattenLightenRun.status == RunStatus.TRANSFORM_FAILED) {
+            return OutputComparison.notCompared("One or both paths failed before comparable output was available");
         }
 
         try {
-            TransformationResult result = schemaLightener.lightenSchema(samplePair.schema, samplePair.instance, outputDirectory);
-            outputFiles = result.getOutputFiles();
-            lightenedCounts = countFiles(outputFiles);
-            Path rootOutput = findRootOutput(result, samplePair.schema);
-            String generatedValidation = validate(rootOutput, samplePair.instance);
-            if (!"OK".equals(generatedValidation)) {
-                status = Status.GENERATED_INVALID;
-                message = generatedValidation;
-            }
-        } catch (Exception e) {
-            status = Status.TRANSFORM_FAILED;
-            message = describe(e);
-        }
+            Map<String, String> directOutputs = outputContentsByRelativePath(directRun);
+            Map<String, String> flattenLightenOutputs = outputContentsByRelativePath(flattenLightenRun);
+            List<String> onlyDirect = new ArrayList<String>();
+            List<String> onlyFlattenLighten = new ArrayList<String>();
+            List<String> changed = new ArrayList<String>();
 
-        return new ReportRow(index, samplePair, status, originalCounts, lightenedCounts, message);
+            Set<String> allNames = new LinkedHashSet<String>();
+            allNames.addAll(directOutputs.keySet());
+            allNames.addAll(flattenLightenOutputs.keySet());
+            for (String name : allNames) {
+                if (!flattenLightenOutputs.containsKey(name)) {
+                    onlyDirect.add(name);
+                } else if (!directOutputs.containsKey(name)) {
+                    onlyFlattenLighten.add(name);
+                } else if (!directOutputs.get(name).equals(flattenLightenOutputs.get(name))) {
+                    changed.add(name);
+                }
+            }
+
+            if (onlyDirect.isEmpty() && onlyFlattenLighten.isEmpty() && changed.isEmpty()) {
+                return new OutputComparison(
+                        false,
+                        "Same generated output (" + directOutputs.size() + " file(s))");
+            }
+
+            List<String> details = new ArrayList<String>();
+            details.add("direct " + directOutputs.size()
+                    + " file(s), flatten+lighten " + flattenLightenOutputs.size() + " file(s)");
+            appendDetail(details, "only direct", onlyDirect);
+            appendDetail(details, "only flatten+lighten", onlyFlattenLighten);
+            appendDetail(details, "changed", changed);
+            return new OutputComparison(true, "Different output: " + String.join("; ", details));
+        } catch (IOException e) {
+            return new OutputComparison(true, "Unable to compare generated output: " + describe(e));
+        }
+    }
+
+    private Map<String, String> outputContentsByRelativePath(GeneratedRun run) throws IOException {
+        Map<String, String> outputs = new LinkedHashMap<String, String>();
+        for (Path outputFile : run.outputFiles) {
+            String relativePath = relativeOutputName(run.outputDirectory, outputFile);
+            String content = new String(Files.readAllBytes(outputFile), StandardCharsets.UTF_8)
+                    .replace("\r\n", "\n")
+                    .replace("\r", "\n");
+            outputs.put(relativePath, content);
+        }
+        return outputs;
+    }
+
+    private static String relativeOutputName(Path outputDirectory, Path outputFile) {
+        Path normalizedDirectory = outputDirectory.toAbsolutePath().normalize();
+        Path normalizedFile = outputFile.toAbsolutePath().normalize();
+        if (normalizedFile.startsWith(normalizedDirectory)) {
+            return normalizedDirectory.relativize(normalizedFile).toString();
+        }
+        return normalizedFile.getFileName().toString();
+    }
+
+    private static void appendDetail(List<String> details, String label, List<String> values) {
+        if (!values.isEmpty()) {
+            details.add(label + ": " + preview(values));
+        }
+    }
+
+    private static String preview(List<String> values) {
+        int limit = Math.min(values.size(), 4);
+        String preview = String.join(", ", values.subList(0, limit));
+        if (values.size() > limit) {
+            preview += ", +" + (values.size() - limit) + " more";
+        }
+        return preview;
     }
 
     private List<SamplePair> discoverSamplePairs(Path sampleDataDirectory) throws Exception {
@@ -272,28 +388,39 @@ class SampleDataReportTest {
         html.append("th,td{padding:7px 8px;border-bottom:1px solid #e4e7eb;text-align:left;vertical-align:top}");
         html.append("th{background:#eef2f7;font-size:12px;text-transform:uppercase;letter-spacing:.03em}");
         html.append("tr.pass td.status{color:#0f7b45;font-weight:bold}");
+        html.append("tr.diverged td.status{color:#7a4f01;font-weight:bold}");
         html.append("tr.generated_invalid td.status{color:#b7791f;font-weight:bold}");
         html.append("tr.source_invalid td.status,tr.transform_failed td.status{color:#c42d2d;font-weight:bold}");
+        html.append(".run_pass{color:#0f7b45;font-weight:bold}.run_generated_invalid,.comparison_diverged{color:#b7791f;font-weight:bold}");
+        html.append(".run_transform_failed{color:#c42d2d;font-weight:bold}.run_not_run{color:#52606d}");
         html.append(".number{text-align:right;font-variant-numeric:tabular-nums}.path{font-family:Consolas,monospace;font-size:12px}");
-        html.append(".message{max-width:420px}.small{font-size:12px;color:#52606d}");
+        html.append(".metric{white-space:nowrap}.message{max-width:420px}.comparison{max-width:360px}.small{font-size:12px;color:#52606d}");
         html.append("</style>\n</head>\n<body>\n");
         html.append("<h1>SchemaLightener Sample Data Report</h1>\n");
         html.append("<p class=\"meta\">Generated ").append(escapeHtml(Instant.now().toString())).append("</p>\n");
         html.append("<div class=\"cards\">");
         card(html, "Sample pairs", String.valueOf(summary.total));
-        card(html, "Valid lightened schemas", String.valueOf(summary.passed));
+        card(html, "Direct valid schemas", String.valueOf(summary.directPassed));
+        card(html, "Flatten+lighten valid schemas", String.valueOf(summary.flattenLightenPassed));
+        card(html, "Validation differences", String.valueOf(summary.validationDifferences));
+        card(html, "Output differences", String.valueOf(summary.outputDifferences));
         card(html, "Generated schema failures", String.valueOf(summary.generatedInvalid));
-        card(html, "Average element reduction", formatPercent(summary.averageElementReduction));
-        card(html, "Average simpleType reduction", formatPercent(summary.averageSimpleTypeReduction));
-        card(html, "Average complexType reduction", formatPercent(summary.averageComplexTypeReduction));
+        card(html, "Direct average element reduction", formatPercent(summary.directAverageElementReduction));
+        card(html, "Flatten+lighten average element reduction", formatPercent(summary.flattenLightenAverageElementReduction));
+        card(html, "Direct average simpleType reduction", formatPercent(summary.directAverageSimpleTypeReduction));
+        card(html, "Flatten+lighten average simpleType reduction", formatPercent(summary.flattenLightenAverageSimpleTypeReduction));
+        card(html, "Direct average complexType reduction", formatPercent(summary.directAverageComplexTypeReduction));
+        card(html, "Flatten+lighten average complexType reduction", formatPercent(summary.flattenLightenAverageComplexTypeReduction));
         html.append("</div>\n");
-        html.append("<p class=\"small\">Rows marked as generated schema failures had valid source schema/instance pairs, ");
-        html.append("but the lightened schema did not validate the same instance.</p>\n");
+        html.append("<p class=\"small\">Each sample runs direct lightenSchema(...) and composed flattenAndLightenSchema(...). ");
+        html.append("Validation differences compare whether each generated root schema validates the same instance; ");
+        html.append("output differences compare generated file sets and normalized file content.</p>\n");
         html.append("<table>\n<thead><tr>");
         html.append("<th>#</th><th>Status</th><th>XML instance</th><th>Source schema</th>");
-        html.append("<th class=\"number\">Elements</th><th class=\"number\">Element reduction</th>");
-        html.append("<th class=\"number\">simpleTypes</th><th class=\"number\">simpleType reduction</th>");
-        html.append("<th class=\"number\">complexTypes</th><th class=\"number\">complexType reduction</th>");
+        html.append("<th class=\"number\">Source counts</th>");
+        html.append("<th>Direct validation</th><th class=\"number\">Direct output counts</th><th class=\"number\">Direct reduction</th>");
+        html.append("<th>Flatten+lighten validation</th><th class=\"number\">Flatten+lighten output counts</th>");
+        html.append("<th class=\"number\">Flatten+lighten reduction</th><th>Output comparison</th>");
         html.append("<th>Message</th></tr></thead>\n<tbody>\n");
         for (ReportRow row : rows) {
             html.append("<tr class=\"").append(row.status.cssClass).append("\">");
@@ -301,13 +428,15 @@ class SampleDataReportTest {
             html.append("<td class=\"status\">").append(escapeHtml(row.status.label)).append("</td>");
             html.append("<td class=\"path\">").append(escapeHtml(relative(row.samplePair.instance))).append("</td>");
             html.append("<td class=\"path\">").append(escapeHtml(relative(row.samplePair.schema))).append("</td>");
-            countsCell(html, row.originalCounts.elements, row.lightenedCounts.elements);
-            percentCell(html, reduction(row.originalCounts.elements, row.lightenedCounts.elements));
-            countsCell(html, row.originalCounts.simpleTypes, row.lightenedCounts.simpleTypes);
-            percentCell(html, reduction(row.originalCounts.simpleTypes, row.lightenedCounts.simpleTypes));
-            countsCell(html, row.originalCounts.complexTypes, row.lightenedCounts.complexTypes);
-            percentCell(html, reduction(row.originalCounts.complexTypes, row.lightenedCounts.complexTypes));
-            html.append("<td class=\"message\">").append(escapeHtml(row.message)).append("</td>");
+            countsCell(html, row.originalCounts);
+            validationCell(html, row.directRun);
+            generatedCountsCell(html, row.directRun);
+            generatedReductionCell(html, row.originalCounts, row.directRun);
+            validationCell(html, row.flattenLightenRun);
+            generatedCountsCell(html, row.flattenLightenRun);
+            generatedReductionCell(html, row.originalCounts, row.flattenLightenRun);
+            outputComparisonCell(html, row.outputComparison);
+            html.append("<td class=\"message\">").append(escapeHtml(row.message())).append("</td>");
             html.append("</tr>\n");
         }
         html.append("</tbody>\n</table>\n</body>\n</html>\n");
@@ -317,13 +446,19 @@ class SampleDataReportTest {
     private Summary summarize(List<ReportRow> rows) {
         Summary summary = new Summary();
         summary.total = rows.size();
-        double elementTotal = 0.0;
-        double simpleTypeTotal = 0.0;
-        double complexTypeTotal = 0.0;
-        int reductionRows = 0;
+        double directElementTotal = 0.0;
+        double directSimpleTypeTotal = 0.0;
+        double directComplexTypeTotal = 0.0;
+        int directReductionRows = 0;
+        double flattenLightenElementTotal = 0.0;
+        double flattenLightenSimpleTypeTotal = 0.0;
+        double flattenLightenComplexTypeTotal = 0.0;
+        int flattenLightenReductionRows = 0;
         for (ReportRow row : rows) {
             if (row.status == Status.PASS) {
                 summary.passed++;
+            } else if (row.status == Status.DIVERGED) {
+                summary.diverged++;
             } else if (row.status == Status.GENERATED_INVALID) {
                 summary.generatedInvalid++;
             } else if (row.status == Status.SOURCE_INVALID) {
@@ -331,17 +466,40 @@ class SampleDataReportTest {
             } else if (row.status == Status.TRANSFORM_FAILED) {
                 summary.transformFailed++;
             }
-            if (row.status != Status.SOURCE_INVALID && row.status != Status.TRANSFORM_FAILED) {
-                elementTotal += reduction(row.originalCounts.elements, row.lightenedCounts.elements);
-                simpleTypeTotal += reduction(row.originalCounts.simpleTypes, row.lightenedCounts.simpleTypes);
-                complexTypeTotal += reduction(row.originalCounts.complexTypes, row.lightenedCounts.complexTypes);
-                reductionRows++;
+            if (row.directRun.status == RunStatus.PASS) {
+                summary.directPassed++;
+            }
+            if (row.flattenLightenRun.status == RunStatus.PASS) {
+                summary.flattenLightenPassed++;
+            }
+            if (row.validationDiverged()) {
+                summary.validationDifferences++;
+            }
+            if (row.outputComparison.diverged) {
+                summary.outputDifferences++;
+            }
+            if (row.directRun.hasOutput()) {
+                directElementTotal += reduction(row.originalCounts.elements, row.directRun.counts.elements);
+                directSimpleTypeTotal += reduction(row.originalCounts.simpleTypes, row.directRun.counts.simpleTypes);
+                directComplexTypeTotal += reduction(row.originalCounts.complexTypes, row.directRun.counts.complexTypes);
+                directReductionRows++;
+            }
+            if (row.flattenLightenRun.hasOutput()) {
+                flattenLightenElementTotal += reduction(row.originalCounts.elements, row.flattenLightenRun.counts.elements);
+                flattenLightenSimpleTypeTotal += reduction(row.originalCounts.simpleTypes, row.flattenLightenRun.counts.simpleTypes);
+                flattenLightenComplexTypeTotal += reduction(row.originalCounts.complexTypes, row.flattenLightenRun.counts.complexTypes);
+                flattenLightenReductionRows++;
             }
         }
-        if (reductionRows > 0) {
-            summary.averageElementReduction = elementTotal / reductionRows;
-            summary.averageSimpleTypeReduction = simpleTypeTotal / reductionRows;
-            summary.averageComplexTypeReduction = complexTypeTotal / reductionRows;
+        if (directReductionRows > 0) {
+            summary.directAverageElementReduction = directElementTotal / directReductionRows;
+            summary.directAverageSimpleTypeReduction = directSimpleTypeTotal / directReductionRows;
+            summary.directAverageComplexTypeReduction = directComplexTypeTotal / directReductionRows;
+        }
+        if (flattenLightenReductionRows > 0) {
+            summary.flattenLightenAverageElementReduction = flattenLightenElementTotal / flattenLightenReductionRows;
+            summary.flattenLightenAverageSimpleTypeReduction = flattenLightenSimpleTypeTotal / flattenLightenReductionRows;
+            summary.flattenLightenAverageComplexTypeReduction = flattenLightenComplexTypeTotal / flattenLightenReductionRows;
         }
         return summary;
     }
@@ -354,16 +512,64 @@ class SampleDataReportTest {
                 .append("</div>");
     }
 
-    private static void countsCell(StringBuilder html, int original, int lightened) {
-        html.append("<td class=\"number\">")
-                .append(original)
-                .append(" -> ")
-                .append(lightened)
+    private static void validationCell(StringBuilder html, GeneratedRun run) {
+        html.append("<td class=\"")
+                .append(run.status.cssClass)
+                .append("\">")
+                .append(escapeHtml(run.status.label))
                 .append("</td>");
     }
 
-    private static void percentCell(StringBuilder html, double value) {
-        html.append("<td class=\"number\">").append(formatPercent(value)).append("</td>");
+    private static void countsCell(StringBuilder html, Counts counts) {
+        html.append("<td class=\"number\">");
+        metric(html, "E", String.valueOf(counts.elements));
+        metric(html, "ST", String.valueOf(counts.simpleTypes));
+        metric(html, "CT", String.valueOf(counts.complexTypes));
+        html.append("</td>");
+    }
+
+    private static void generatedCountsCell(StringBuilder html, GeneratedRun run) {
+        if (!run.hasOutput()) {
+            notApplicableCell(html);
+            return;
+        }
+        countsCell(html, run.counts);
+    }
+
+    private static void generatedReductionCell(StringBuilder html, Counts original, GeneratedRun run) {
+        if (!run.hasOutput()) {
+            notApplicableCell(html);
+            return;
+        }
+        reductionCell(html, original, run.counts);
+    }
+
+    private static void reductionCell(StringBuilder html, Counts original, Counts generated) {
+        html.append("<td class=\"number\">");
+        metric(html, "E", formatPercent(reduction(original.elements, generated.elements)));
+        metric(html, "ST", formatPercent(reduction(original.simpleTypes, generated.simpleTypes)));
+        metric(html, "CT", formatPercent(reduction(original.complexTypes, generated.complexTypes)));
+        html.append("</td>");
+    }
+
+    private static void notApplicableCell(StringBuilder html) {
+        html.append("<td class=\"number small\">n/a</td>");
+    }
+
+    private static void outputComparisonCell(StringBuilder html, OutputComparison comparison) {
+        html.append("<td class=\"comparison");
+        if (comparison.diverged) {
+            html.append(" comparison_diverged");
+        }
+        html.append("\">").append(escapeHtml(comparison.message)).append("</td>");
+    }
+
+    private static void metric(StringBuilder html, String label, String value) {
+        html.append("<div class=\"metric\">")
+                .append(escapeHtml(label))
+                .append(": ")
+                .append(escapeHtml(value))
+                .append("</div>");
     }
 
     private static String relative(Path path) {
@@ -434,6 +640,7 @@ class SampleDataReportTest {
 
     private enum Status {
         PASS("Pass", "pass"),
+        DIVERGED("Diverged", "diverged"),
         SOURCE_INVALID("Source invalid", "source_invalid"),
         TRANSFORM_FAILED("Transform failed", "transform_failed"),
         GENERATED_INVALID("Generated invalid", "generated_invalid");
@@ -442,6 +649,21 @@ class SampleDataReportTest {
         private final String cssClass;
 
         Status(String label, String cssClass) {
+            this.label = label;
+            this.cssClass = cssClass;
+        }
+    }
+
+    private enum RunStatus {
+        PASS("Valid", "run_pass"),
+        GENERATED_INVALID("Invalid", "run_generated_invalid"),
+        TRANSFORM_FAILED("Failed", "run_transform_failed"),
+        NOT_RUN("Not run", "run_not_run");
+
+        private final String label;
+        private final String cssClass;
+
+        RunStatus(String label, String cssClass) {
             this.label = label;
             this.cssClass = cssClass;
         }
@@ -485,33 +707,143 @@ class SampleDataReportTest {
         private final SamplePair samplePair;
         private final Status status;
         private final Counts originalCounts;
-        private final Counts lightenedCounts;
-        private final String message;
+        private final String sourceValidation;
+        private final GeneratedRun directRun;
+        private final GeneratedRun flattenLightenRun;
+        private final OutputComparison outputComparison;
 
         private ReportRow(
                 int index,
                 SamplePair samplePair,
-                Status status,
                 Counts originalCounts,
-                Counts lightenedCounts,
-                String message) {
+                String sourceValidation,
+                GeneratedRun directRun,
+                GeneratedRun flattenLightenRun,
+                OutputComparison outputComparison) {
             this.index = index;
             this.samplePair = samplePair;
-            this.status = status;
             this.originalCounts = originalCounts;
-            this.lightenedCounts = lightenedCounts;
+            this.sourceValidation = sourceValidation;
+            this.directRun = directRun;
+            this.flattenLightenRun = flattenLightenRun;
+            this.outputComparison = outputComparison;
+            this.status = determineStatus();
+        }
+
+        private Status determineStatus() {
+            if (!"OK".equals(sourceValidation)) {
+                return Status.SOURCE_INVALID;
+            }
+            if (directRun.status == RunStatus.TRANSFORM_FAILED
+                    || flattenLightenRun.status == RunStatus.TRANSFORM_FAILED) {
+                return Status.TRANSFORM_FAILED;
+            }
+            if (directRun.status == RunStatus.GENERATED_INVALID
+                    || flattenLightenRun.status == RunStatus.GENERATED_INVALID) {
+                return Status.GENERATED_INVALID;
+            }
+            if (validationDiverged() || outputComparison.diverged) {
+                return Status.DIVERGED;
+            }
+            return Status.PASS;
+        }
+
+        private boolean validationDiverged() {
+            if (!"OK".equals(sourceValidation)) {
+                return false;
+            }
+            if (directRun.status != flattenLightenRun.status) {
+                return true;
+            }
+            return directRun.status == RunStatus.GENERATED_INVALID
+                    && !directRun.validation.equals(flattenLightenRun.validation);
+        }
+
+        private String message() {
+            List<String> messages = new ArrayList<String>();
+            if (!"OK".equals(sourceValidation)) {
+                messages.add("Source: " + sourceValidation);
+            }
+            if (!directRun.message.isEmpty()) {
+                messages.add("Direct: " + directRun.message);
+            }
+            if (!flattenLightenRun.message.isEmpty()) {
+                messages.add("Flatten+lighten: " + flattenLightenRun.message);
+            }
+            return String.join(" | ", messages);
+        }
+    }
+
+    private static final class GeneratedRun {
+        private final RunStatus status;
+        private final Counts counts;
+        private final String validation;
+        private final String message;
+        private final Path outputDirectory;
+        private final List<Path> outputFiles;
+
+        private GeneratedRun(
+                RunStatus status,
+                Counts counts,
+                String validation,
+                String message,
+                Path outputDirectory,
+                List<Path> outputFiles) {
+            this.status = status;
+            this.counts = counts;
+            this.validation = validation;
             this.message = message;
+            this.outputDirectory = outputDirectory;
+            this.outputFiles = Collections.unmodifiableList(new ArrayList<Path>(outputFiles));
+        }
+
+        private static GeneratedRun notRun() {
+            return new GeneratedRun(
+                    RunStatus.NOT_RUN,
+                    Counts.empty(),
+                    "Not run",
+                    "",
+                    Paths.get("").toAbsolutePath().normalize(),
+                    Collections.<Path>emptyList());
+        }
+
+        private boolean hasOutput() {
+            return status != RunStatus.NOT_RUN
+                    && status != RunStatus.TRANSFORM_FAILED
+                    && !outputFiles.isEmpty();
+        }
+    }
+
+    private static final class OutputComparison {
+        private final boolean diverged;
+        private final String message;
+
+        private OutputComparison(boolean diverged, String message) {
+            this.diverged = diverged;
+            this.message = message;
+        }
+
+        private static OutputComparison notCompared(String message) {
+            return new OutputComparison(false, "Not compared: " + message);
         }
     }
 
     private static final class Summary {
         private int total;
         private int passed;
+        private int diverged;
+        private int directPassed;
+        private int flattenLightenPassed;
+        private int validationDifferences;
+        private int outputDifferences;
         private int generatedInvalid;
         private int sourceInvalid;
         private int transformFailed;
-        private double averageElementReduction;
-        private double averageSimpleTypeReduction;
-        private double averageComplexTypeReduction;
+        private double directAverageElementReduction;
+        private double directAverageSimpleTypeReduction;
+        private double directAverageComplexTypeReduction;
+        private double flattenLightenAverageElementReduction;
+        private double flattenLightenAverageSimpleTypeReduction;
+        private double flattenLightenAverageComplexTypeReduction;
     }
 }
