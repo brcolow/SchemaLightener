@@ -32,7 +32,7 @@ The Maven coordinates are:
 <dependency>
     <groupId>io.github.brcolow</groupId>
     <artifactId>schema-lightener</artifactId>
-    <version>5.0.0-SNAPSHOT</version>
+    <version>5.0.0</version>
 </dependency>
 ```
 
